@@ -78,13 +78,33 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(themeKt, /enum class AppColorTheme/);
   assert.match(themeKt, /LocalDensity provides/);
 
-  // Requirement: Clean scrollable left pane, SettingsDialog, and LruCache thumbnails in SplitScreenBrowser.kt
+  // Requirement: Clean scrollable left pane, SettingsDialog, LruCache thumbnails, and Limpar search button
   const splitKt = byPath.get('app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt');
   assert.ok(splitKt, 'SplitScreenBrowser.kt must exist');
   assert.match(splitKt, /verticalScroll/);
   assert.match(splitKt, /fun SettingsDialog/);
   assert.match(splitKt, /LruCache/);
   assert.match(splitKt, /Dispatchers\.IO/);
+  assert.match(splitKt, /text = "Limpar"/);
+
+  // Requirement: libVLC ScaleTypes, scale reset, internal setVolume, and active-media guard
+  const vlcKt = byPath.get('app/src/main/java/com/autocine/player/vlc/VlcPlayerEngine.kt');
+  assert.ok(vlcKt, 'VlcPlayerEngine.kt must exist');
+  assert.match(vlcKt, /player\.scale = 0f/);
+  assert.match(vlcKt, /SURFACE_BEST_FIT/);
+  assert.match(vlcKt, /SURFACE_FIT_SCREEN/);
+  assert.match(vlcKt, /SURFACE_FILL/);
+  assert.match(vlcKt, /SURFACE_16_9/);
+  assert.match(vlcKt, /SURFACE_4_3/);
+  assert.match(vlcKt, /setVolume\(effective\)/);
+  assert.match(vlcKt, /hasActiveMediaFor/);
+
+  // Requirement: Single persistent VLCVideoLayout in PlayerScreen (no detach/recreate on mini<->fullscreen)
+  const playerScreenKt = byPath.get('app/src/main/java/com/autocine/player/ui/PlayerScreen.kt');
+  assert.ok(playerScreenKt, 'PlayerScreen.kt must exist');
+  assert.match(playerScreenKt, /PersistentVlcVideoSurface/);
+  assert.match(playerScreenKt, /BoxWithConstraints/);
+  assert.match(playerScreenKt, /setVlcVolumeFraction/);
 
   // Regression check: Kotlin forbids destructuring declarations using `by` delegation
   for (const file of ANDROID_PROJECT_FILES) {

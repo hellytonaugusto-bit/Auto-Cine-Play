@@ -2,6 +2,7 @@ package com.autocine.player.viewmodel
 
 import android.app.Application
 import android.os.Environment
+import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocine.player.data.FolderEntry
@@ -15,12 +16,15 @@ import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 data class PlayerUiState(
@@ -41,6 +45,7 @@ data class PlayerUiState(
     val isSettingsOpen: Boolean = false,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
+    val vlcVolumePercent: Int = 100,
     val allVideos: List<VideoFileItem> = emptyList(),
     val browsedVideos: List<VideoFileItem> = emptyList(),
     val visibleVideos: List<VideoFileItem> = emptyList(),
@@ -67,6 +72,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var service: VideoPlaybackService? = null
     private val shuffleBackStack = ArrayDeque<String>()
 
+    private var savedResumeVideoId: String = ""
+    private var savedResumePositionMs: Long = 0L
+    private var lastPositionSavedElapsedMs: Long = 0L
+    private var volumeSaveJob: Job? = null
+
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
@@ -74,6 +84,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val saved = prefs.prefsFlow.first()
             val savedSelection = if (saved.allFilterCustomized) saved.selectedAllFolderIds else null
+            savedResumeVideoId = saved.lastVideoId
+            savedResumePositionMs = saved.lastPositionMs
+
             _uiState.update {
                 it.copy(
                     folderUri = saved.folderUri,
@@ -90,9 +103,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     aspectRatio = saved.aspectRatio,
                     sortOrder = saved.sortOrder,
                     uiScaleLevel = saved.uiScaleLevel,
-                    colorTheme = saved.colorTheme
+                    colorTheme = saved.colorTheme,
+                    vlcVolumePercent = saved.vlcVolumePercent
                 )
             }
+            service?.engine?.setBaseVolume(saved.vlcVolumePercent)
+            service?.engine?.applyAspectRatio(saved.aspectRatio)
+
             if (saved.playAllFolders) {
                 loadAllFolders(saved.folderUri, savedSelection, saved.lastVideoId)
             } else if (saved.folderUri.isNotEmpty()) {
@@ -110,24 +127,82 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun bindService(playbackService: VideoPlaybackService) {
         service = playbackService
-        playbackService.engine.applyAspectRatio(_uiState.value.aspectRatio)
-        playbackService.engine.onPlayingChanged = { playing ->
+        val engine = playbackService.engine
+        engine.setBaseVolume(_uiState.value.vlcVolumePercent)
+        engine.applyAspectRatio(_uiState.value.aspectRatio)
+
+        engine.onPlayingChanged = { playing ->
             _uiState.update { it.copy(isPlaying = playing) }
             val title = _uiState.value.currentVideo?.name ?: "AutoCine Player"
             playbackService.updateNotification(title, playing)
         }
-        playbackService.engine.onTimeChanged = { pos, dur ->
+        engine.onTimeChanged = { pos, dur ->
             _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
+            val now = SystemClock.elapsedRealtime()
+            if (pos > 0L && now - lastPositionSavedElapsedMs >= 3000L) {
+                lastPositionSavedElapsedMs = now
+                savedResumePositionMs = pos
+                viewModelScope.launch { prefs.saveLastPositionMs(pos) }
+            }
         }
-        playbackService.engine.onTrackEnded = { playNext() }
+        engine.onTrackEnded = { playNext() }
 
         playbackService.onExternalPrev = { playPrevious() }
         playbackService.onExternalNext = { playNext() }
         playbackService.onExternalToggle = { togglePlayPause() }
 
+        // CRÍTICO: Se o serviço em segundo plano JÁ tem mídia carregada/tocando,
+        // nunca recarregamos nem reiniciamos do 00:00 — apenas sincronizamos o estado atual.
+        if (engine.hasActiveMedia()) {
+            val activeUri = engine.currentMediaUri
+            val state = _uiState.value
+            val matching = activeUri?.let { uri -> state.allVideos.firstOrNull { it.uri == uri } }
+            val matchingIdx = if (matching != null) state.allVideos.indexOf(matching) else state.currentIndexInFolder
+            val livePos = engine.getPositionMs()
+            val liveDur = engine.getDurationMs()
+            _uiState.update {
+                it.copy(
+                    currentVideo = matching ?: it.currentVideo,
+                    currentIndexInFolder = matchingIdx,
+                    isPlaying = engine.isPlaying(),
+                    positionMs = livePos,
+                    durationMs = liveDur
+                )
+            }
+            return
+        }
+
+        // Cold start: nenhuma mídia carregada ainda no engine — retoma do ponto salvo
         val current = _uiState.value.currentVideo
-        if (current != null && !playbackService.engine.isPlaying()) {
-            playVideo(current)
+        if (current != null) {
+            val resumeMs = if (current.id == savedResumeVideoId) savedResumePositionMs else 0L
+            playVideo(current, resumePositionMs = resumeMs, forceRestart = false)
+        }
+    }
+
+    fun persistPlaybackPosition() {
+        val pos = service?.engine?.getPositionMs() ?: _uiState.value.positionMs
+        if (pos > 0L) {
+            savedResumePositionMs = pos
+            viewModelScope.launch { prefs.saveLastPositionMs(pos) }
+        }
+    }
+
+    fun getVlcVolumeFraction(): Float {
+        val live = service?.engine?.getBaseVolume() ?: _uiState.value.vlcVolumePercent
+        return (live.coerceIn(0, 100)) / 100f
+    }
+
+    fun setVlcVolumeFraction(fraction: Float) {
+        val percent = (fraction.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
+        service?.engine?.setBaseVolume(percent)
+        if (_uiState.value.vlcVolumePercent != percent) {
+            _uiState.update { it.copy(vlcVolumePercent = percent) }
+        }
+        volumeSaveJob?.cancel()
+        volumeSaveJob = viewModelScope.launch {
+            delay(250L)
+            prefs.saveVlcVolumePercent(percent)
         }
     }
 
@@ -401,6 +476,31 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        val engine = service?.engine
+        val activeUri = if (engine?.hasActiveMedia() == true) engine.currentMediaUri else null
+
+        // Se o serviço já estiver reproduzindo um vídeo, apenas sincroniza a fila sem reiniciar do 00:00
+        if (activeUri != null) {
+            val runningMatch = sorted.firstOrNull { it.uri == activeUri }
+            val existingCurrent = _uiState.value.currentVideo
+            val target = runningMatch ?: existingCurrent ?: sorted.firstOrNull()
+            val idx = if (target != null) sorted.indexOfFirst { it.id == target.id } else -1
+            _uiState.update {
+                it.copy(
+                    allVideos = sorted,
+                    browsedVideos = sorted,
+                    visibleVideos = filtered,
+                    currentVideo = target,
+                    currentIndexInFolder = idx,
+                    isPlaying = engine?.isPlaying() == true,
+                    positionMs = engine?.getPositionMs() ?: it.positionMs,
+                    durationMs = engine?.getDurationMs() ?: it.durationMs,
+                    isScanning = false
+                )
+            }
+            return
+        }
+
         shuffleBackStack.clear()
         val target = sorted.firstOrNull { it.id == autoResumeVideoId } ?: sorted.firstOrNull()
         val idx = if (target != null) sorted.indexOf(target) else -1
@@ -416,7 +516,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         if (target != null && service != null) {
-            playVideo(target)
+            val resumeMs = if (target.id == savedResumeVideoId) savedResumePositionMs else 0L
+            playVideo(target, resumePositionMs = resumeMs, forceRestart = false)
         }
     }
 
@@ -436,7 +537,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val idx = currentBrowsed.indexOfFirst { it.id == item.id }
             _uiState.update { it.copy(allVideos = currentBrowsed, currentIndexInFolder = idx) }
         }
-        playVideo(item)
+        // Se tocou no mesmo vídeo que já está carregado, continua de onde está; se é outro, inicia do 00:00
+        val isSameRunning = service?.engine?.hasActiveMediaFor(item.uri) == true
+        playVideo(item, resumePositionMs = 0L, forceRestart = !isSameRunning)
     }
 
     private fun pushShuffleHistory(videoId: String) {
@@ -446,16 +549,43 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun playVideo(item: VideoFileItem) {
+    fun playVideo(
+        item: VideoFileItem,
+        resumePositionMs: Long = 0L,
+        forceRestart: Boolean = true
+    ) {
         val svc = service ?: return
         if (!svc.audioFocus.requestFocus()) return
         val idx = _uiState.value.allVideos.indexOfFirst { it.id == item.id }
-        _uiState.update {
-            it.copy(currentVideo = item, currentIndexInFolder = idx, positionMs = 0L)
+
+        if (!forceRestart && svc.engine.hasActiveMediaFor(item.uri)) {
+            _uiState.update {
+                it.copy(
+                    currentVideo = item,
+                    currentIndexInFolder = idx,
+                    positionMs = svc.engine.getPositionMs(),
+                    durationMs = svc.engine.getDurationMs()
+                )
+            }
+            svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = false)
+            svc.engine.applyAspectRatio(_uiState.value.aspectRatio)
+            svc.updateNotification(item.name, true)
+            return
         }
-        svc.engine.playUri(item.uri)
+
+        savedResumeVideoId = item.id
+        savedResumePositionMs = resumePositionMs
+        _uiState.update {
+            it.copy(currentVideo = item, currentIndexInFolder = idx, positionMs = resumePositionMs)
+        }
+        svc.engine.setBaseVolume(_uiState.value.vlcVolumePercent)
+        svc.engine.applyAspectRatio(_uiState.value.aspectRatio)
+        svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = forceRestart)
         svc.updateNotification(item.name, true)
-        viewModelScope.launch { prefs.saveLastVideoId(item.id) }
+        viewModelScope.launch {
+            prefs.saveLastVideoId(item.id)
+            prefs.saveLastPositionMs(resumePositionMs)
+        }
     }
 
     fun togglePlayPause() {
@@ -492,7 +622,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             PlaybackMode.SEQUENTIAL -> list[(currentIdx + 1) % list.size]
         }
-        playVideo(nextItem)
+        playVideo(nextItem, resumePositionMs = 0L, forceRestart = true)
     }
 
     fun playPrevious() {
@@ -507,7 +637,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val prevId = shuffleBackStack.removeLast()
                 val match = byId[prevId]
                 if (match != null && match.id != currentId) {
-                    playVideo(match)
+                    playVideo(match, resumePositionMs = 0L, forceRestart = true)
                     return
                 }
             }
@@ -515,11 +645,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
         val currentIdx = state.currentIndexInFolder.coerceAtLeast(0)
         val prevIdx = (currentIdx - 1 + list.size) % list.size
-        playVideo(list[prevIdx])
+        playVideo(list[prevIdx], resumePositionMs = 0L, forceRestart = true)
     }
 
     fun seekTo(positionMs: Long) {
         service?.engine?.seekTo(positionMs)
+        savedResumePositionMs = positionMs
         _uiState.update { it.copy(positionMs = positionMs) }
     }
 
@@ -567,10 +698,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSplitScreen(enabled: Boolean) {
         _uiState.update { it.copy(isSplitScreen = enabled) }
+        service?.engine?.reapplyAspectRatio()
     }
 
     fun setInPipMode(inPip: Boolean) {
         _uiState.update { it.copy(isInPipMode = inPip, isSplitScreen = if (inPip) false else it.isSplitScreen) }
+        service?.engine?.reapplyAspectRatio()
     }
 
     fun requestDelete(item: VideoFileItem) {
@@ -602,7 +735,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 }
                 if (wasCurrent && nextCurrent != null) {
-                    playVideo(nextCurrent)
+                    playVideo(nextCurrent, resumePositionMs = 0L, forceRestart = true)
                 }
             }
         }

@@ -75,11 +75,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -227,7 +230,7 @@ fun SplitScreenLeftPane(
     isPlaying: Boolean,
     activeStorageSlot: StorageSlot,
     hasCustomAllFilter: Boolean,
-    videoSurface: @Composable () -> Unit,
+    onVideoSlotPositioned: (Rect) -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -243,15 +246,17 @@ fun SplitScreenLeftPane(
             .background(Color(0xFF0C1018), RoundedCornerShape(18.dp))
             .padding(12.dp)
     ) {
-        // Quadro do Mini-Player (tocar aqui volta imediatamente para Tela Cheia)
+        // Espaço reservado 16:9 onde a instância única do VLCVideoLayout é posicionada (sem recriar Surface)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .background(Color.Black, RoundedCornerShape(14.dp))
-        ) {
-            videoSurface()
-        }
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black)
+                .onGloballyPositioned { coords ->
+                    onVideoSlotPositioned(coords.boundsInRoot())
+                }
+        )
 
         Spacer(Modifier.height(12.dp))
 
@@ -658,12 +663,31 @@ fun SplitScreenFileList(
 
         Spacer(Modifier.height(10.dp))
 
-        // Campo de Busca Parcial (ignora maiúsculas/minúsculas e acentos)
+        // Campo de Busca Parcial (ignora maiúsculas/minúsculas e acentos) com botão visível "Limpar"
         OutlinedTextField(
             value = state.searchQuery,
             onValueChange = onSearchChange,
             placeholder = { Text("Pesquisar vídeo (ex: gode, forro)...") },
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = palette.accent) },
+            trailingIcon = {
+                if (state.searchQuery.isNotEmpty()) {
+                    Surface(
+                        onClick = { onSearchChange("") },
+                        shape = RoundedCornerShape(10.dp),
+                        color = palette.accentSoft,
+                        border = BorderStroke(1.dp, palette.accent),
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Text(
+                            text = "Limpar",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            },
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(

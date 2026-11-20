@@ -18,7 +18,6 @@ import {
   SlidersHorizontal,
   Trash2,
   Usb,
-  X,
 } from 'lucide-react';
 import type {
   MediaFolder,
@@ -566,16 +565,21 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder='Pesquisar vídeo (ex: "gode", "forro")...'
-              className="w-full min-h-[50px] pl-12 pr-12 rounded-xl bg-[#0F141E] border border-white/12 focus:outline-none text-base text-white placeholder:text-slate-500"
+              className="w-full min-h-[50px] pl-12 pr-24 rounded-xl bg-[#0F141E] border border-white/12 focus:outline-none text-base text-white placeholder:text-slate-500"
             />
             {searchQuery && (
               <button
                 type="button"
+                data-testid="search-clear-btn"
                 onClick={() => onSearchChange('')}
                 aria-label="Limpar pesquisa"
-                className="absolute right-2 min-w-[44px] min-h-[44px] rounded-xl hover:bg-white/10 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
+                className="absolute right-2 min-h-[36px] px-3.5 rounded-lg text-sm font-semibold text-white flex items-center justify-center transition cursor-pointer hover:brightness-110"
+                style={{
+                  backgroundColor: 'var(--ac-accent-soft)',
+                  border: '1px solid var(--ac-accent)',
+                }}
               >
-                <X className="w-5 h-5" />
+                Limpar
               </button>
             )}
           </div>

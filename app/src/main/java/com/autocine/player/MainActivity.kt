@@ -14,7 +14,6 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
-import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -30,7 +29,9 @@ import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -43,9 +44,9 @@ import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.AutoCineTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.viewmodel.PlayerViewModel
+import com.autocine.player.vlc.VlcPlayerEngine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
 
     private val viewModel: PlayerViewModel by viewModels()
     private var playbackService: VideoPlaybackService? = null
+    private var activeEngine by mutableStateOf<VlcPlayerEngine?>(null)
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
 
@@ -66,6 +68,7 @@ class MainActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val svc = (binder as VideoPlaybackService.LocalBinder).getService()
             playbackService = svc
+            activeEngine = svc.engine
             isBound = true
             viewModel.bindService(svc)
             updatePipParams(viewModel.uiState.value.isPlaying)
@@ -74,6 +77,7 @@ class MainActivity : ComponentActivity() {
         override fun onServiceDisconnected(name: ComponentName?) {
             isBound = false
             playbackService = null
+            activeEngine = null
         }
     }
 
@@ -149,27 +153,44 @@ class MainActivity : ComponentActivity() {
             ) {
                 PlayerScreen(
                     viewModel = viewModel,
-                    getEngine = { playbackService?.engine },
+                    engine = activeEngine,
                     onEnterPip = { enterPipNow() },
                     onPickFolderForSlot = { slot ->
                         pendingPickerSlot = slot
                         openFolderLauncher.launch(null)
                     },
                     onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
-                    onGetBrightness = { getWindowBrightness() },
-                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
-                    onGetVolume = { getMediaVolume() }
+                    onGetBrightness = { getWindowBrightness() }
                 )
             }
         }
     }
 
     /**
-     * IMPORTANTE: Nunca pausamos a reprodução em onPause() ou onStop().
-     * Assim, o vídeo/áudio continuam rodando em segundo plano mesmo durante a Câmera de Ré.
+     * IMPORTANTE: Nunca pausamos nem reiniciamos a reprodução em onPause()/onStop()/onResume().
+     * Apenas salvamos a posição exata ao sair e reaplicamos o modo imersivo/proporção ao voltar.
      */
+    override fun onResume() {
+        super.onResume()
+        if (!isInPictureInPictureMode) {
+            enableImmersiveFullscreen()
+        }
+        activeEngine?.reapplyAspectRatio()
+    }
+
+    override fun onPause() {
+        viewModel.persistPlaybackPosition()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        viewModel.persistPlaybackPosition()
+        super.onStop()
+    }
+
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
+        viewModel.persistPlaybackPosition()
         if (viewModel.uiState.value.isPlaying) {
             enterPipNow()
         }
@@ -184,6 +205,7 @@ class MainActivity : ComponentActivity() {
         if (!isInPictureInPictureMode) {
             enableImmersiveFullscreen()
         }
+        activeEngine?.reapplyAspectRatio()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -297,34 +319,6 @@ class MainActivity : ComponentActivity() {
         return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
-    private fun setMediaVolume(fraction: Float) {
-        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            am.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
-        val target = (minVol + fraction.coerceIn(0f, 1f) * (maxVol - minVol))
-            .roundToInt()
-            .coerceIn(minVol, maxVol)
-        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != target) {
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
-        }
-    }
-
-    private fun getMediaVolume(): Float {
-        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            am.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
-        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
-        return (current - minVol).toFloat() / (maxVol - minVol).toFloat()
-    }
-
     private fun requestModernPermissions() {
         val permissionsToRequest = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -341,7 +335,6 @@ class MainActivity : ComponentActivity() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            // Opcional: o usuário também pode usar SAF diretamente para Pen Drive OTG
             runCatching {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                     data = Uri.parse("package:$packageName")
@@ -352,6 +345,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        viewModel.persistPlaybackPosition()
         runCatching { unregisterReceiver(pipReceiver) }
         if (isBound) {
             unbindService(serviceConnection)
