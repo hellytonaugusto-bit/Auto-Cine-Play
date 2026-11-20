@@ -229,6 +229,8 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.os.Build
+import androidx.annotation.RequiresApi
 
 class AudioFocusController(
     context: Context,
@@ -272,27 +274,52 @@ class AudioFocusController(
         }
     }
 
-    private val audioAttributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_MEDIA)
-        .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-        .build()
+    private val focusRequestOreo: AudioFocusRequest? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            createFocusRequestOreo()
+        } else {
+            null
+        }
 
-    private val focusRequest: AudioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-        .setAudioAttributes(audioAttributes)
-        .setAcceptsDelayedFocusGain(true)
-        .setWillPauseWhenDucked(false)
-        .setOnAudioFocusChangeListener(focusChangeListener)
-        .build()
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun createFocusRequestOreo(): AudioFocusRequest {
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build()
+
+        return AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+            .setAudioAttributes(audioAttributes)
+            .setAcceptsDelayedFocusGain(true)
+            .setWillPauseWhenDucked(false)
+            .setOnAudioFocusChangeListener(focusChangeListener)
+            .build()
+    }
 
     fun requestFocus(): Boolean {
         if (hasFocus) return true
-        val result = audioManager.requestAudioFocus(focusRequest)
+        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = focusRequestOreo ?: return false
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                focusChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN
+            )
+        }
         hasFocus = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         return hasFocus
     }
 
     fun abandonFocus() {
-        audioManager.abandonAudioFocusRequest(focusRequest)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequestOreo?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(focusChangeListener)
+        }
         hasFocus = false
         pausedByTransientLoss = false
         onDuckChanged(false)
@@ -316,10 +343,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.media.app.NotificationCompat.MediaStyle
 import com.autocine.player.MainActivity
 import com.autocine.player.R
@@ -337,7 +366,7 @@ class VideoPlaybackService : Service() {
 
         fun start(context: Context) {
             val intent = Intent(context, VideoPlaybackService::class.java)
-            context.startForegroundService(intent)
+            ContextCompat.startForegroundService(context, intent)
         }
     }
 
@@ -383,11 +412,16 @@ class VideoPlaybackService : Service() {
             isActive = true
         }
 
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-        )
+        val notification = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -467,15 +501,17 @@ class VideoPlaybackService : Service() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            setShowBadge(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                setShowBadge(false)
+            }
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.createNotificationChannel(channel)
         }
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.createNotificationChannel(channel)
     }
 
     override fun onBind(intent: Intent?): IBinder = binder

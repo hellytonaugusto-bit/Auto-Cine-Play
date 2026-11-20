@@ -55,11 +55,11 @@ jobs:
       - name: Compilar APK de depuração
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Publicar app-debug.apk nos Artifacts
+      - name: Publicar APKs de depuração nos Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: autocine-player-debug-apks
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
 `,
@@ -151,13 +151,22 @@ android {
 
     defaultConfig {
         applicationId = "com.autocine.player"
-        minSdk = 35
+        minSdk = 24
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
         }
     }
 
@@ -237,7 +246,15 @@ dependencies {
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Acesso moderno Android 15+ a vídeos e armazenamento externo (USB OTG / SD Card) -->
+    <!-- Acesso a vídeos e armazenamento externo no Android 7 ao 12 (API 24-32) -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Acesso moderno Android 13+ / 15+ a vídeos e armazenamento externo (USB OTG / SD Card) -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission
         android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
@@ -252,6 +269,8 @@ dependencies {
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.AutoCinePlayer">
@@ -308,9 +327,88 @@ dependencies {
         <item name="android:windowBackground">#07090D</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>
+`,
+  },
+  {
+    path: 'app/src/main/res/values-v28/themes.xml',
+    category: 'resources',
+    language: 'xml',
+    summary: 'Recorte de tela (shortEdges) exclusivo para Android 9+ (API 28+)',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AutoCinePlayer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#07090D</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
     </style>
 </resources>
+`,
+  },
+  {
+    path: 'app/src/main/res/drawable/ic_launcher_background.xml',
+    category: 'resources',
+    language: 'xml',
+    summary: 'Fundo vetorial escuro automotivo do Adaptive Icon',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#070B14" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#0C1628" android:pathData="M54,54m-46,0a46,46 0,1 1,92 0a46,46 0,1 1,-92 0" />
+    <path android:fillColor="#11223C" android:pathData="M54,54m-35,0a35,35 0,1 1,70 0a35,35 0,1 1,-70 0" />
+    <path android:fillColor="#00000000" android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" android:strokeWidth="1.2" android:strokeColor="#2638BDF8" />
+</vector>
+`,
+  },
+  {
+    path: 'app/src/main/res/drawable/ic_launcher_foreground.xml',
+    category: 'resources',
+    language: 'xml',
+    summary: 'Símbolo vetorial de play/cinema automotivo azul do Adaptive Icon',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#0F172A" android:pathData="M31,33h46c4.42,0 8,3.58 8,8v24c0,4.42 -3.58,8 -8,8H31c-4.42,0 -8,-3.58 -8,-8V41c0,-4.42 3.58,-8 8,-8z" android:strokeWidth="2.8" android:strokeColor="#38BDF8" />
+    <path android:fillColor="#2938BDF8" android:pathData="M32,36h44c2.76,0 5,2.24 5,5v5H27v-5c0,-2.76 2.24,-5 5,-5z" />
+    <path android:fillColor="#0284C7" android:pathData="M54,53m-13.5,0a13.5,13.5 0,1 1,27 0a13.5,13.5 0,1 1,-27 0" />
+    <path android:fillColor="#38BDF8" android:pathData="M54,53m-12,0a12,12 0,1 1,24 0a12,12 0,1 1,-24 0" />
+    <path android:fillColor="#070B14" android:pathData="M50.2,46.4L61.2,53L50.2,59.6z" />
+    <path android:fillColor="#38BDF8" android:pathData="M39,77.5h30c1.1,0 2,0.9 2,2s-0.9,2 -2,2H39c-1.1,0 -2,-0.9 -2,-2s0.9,-2 2,-2z" />
+</vector>
+`,
+  },
+  {
+    path: 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml',
+    category: 'resources',
+    language: 'xml',
+    summary: 'Adaptive Icon principal para Android 8+',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
+`,
+  },
+  {
+    path: 'app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml',
+    category: 'resources',
+    language: 'xml',
+    summary: 'Adaptive Icon redondo para Android 8+',
+    content: `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_launcher_background" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+</adaptive-icon>
 `,
   },
   {

@@ -19,19 +19,24 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.drawable.Icon
 import android.media.AudioManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.IBinder
 import android.provider.Settings
 import android.util.Rational
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -98,7 +103,7 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* Permissões Android 15 (READ_MEDIA_VIDEO + POST_NOTIFICATIONS) tratadas */ }
+    ) { /* Permissões de armazenamento/notificações (Android 7 ao 15+) tratadas */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,10 +118,11 @@ class MainActivity : ComponentActivity() {
             Context.BIND_AUTO_CREATE
         )
 
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
             pipReceiver,
             IntentFilter(PIP_ACTION_CONTROL),
-            RECEIVER_NOT_EXPORTED
+            ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
         setContent {
@@ -135,10 +141,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * IMPORTANTE: Nunca pausamos a reprodução em onPause() ou onStop().
-     * Assim, o vídeo/áudio continuam rodando em segundo plano mesmo durante a Câmera de Ré.
-     */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         if (viewModel.uiState.value.isPlaying) {
@@ -166,22 +168,49 @@ class MainActivity : ComponentActivity() {
 
     private fun enableImmersiveFullscreen() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
-        val controller = WindowInsetsControllerCompat(window, window.decorView)
-        controller.hide(WindowInsetsCompat.Type.systemBars())
-        controller.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
     }
 
+    private fun isPipSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
     private fun enterPipNow() {
-        val params = buildPipParams(viewModel.uiState.value.isPlaying)
-        setPictureInPictureParams(params)
-        enterPictureInPictureMode(params)
+        if (!isPipSupported()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                val params = buildPipParams(viewModel.uiState.value.isPlaying)
+                setPictureInPictureParams(params)
+                enterPictureInPictureMode(params)
+            }
+        }
     }
 
     private fun updatePipParams(isPlaying: Boolean) {
-        setPictureInPictureParams(buildPipParams(isPlaying))
+        if (!isPipSupported()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                setPictureInPictureParams(buildPipParams(isPlaying))
+            }
+        }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams {
         val actions = listOf(
             createRemoteAction(
@@ -200,14 +229,17 @@ class MainActivity : ComponentActivity() {
                 controlType = CONTROL_NEXT
             )
         )
-        return PictureInPictureParams.Builder()
+        val builder = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
-            .setAutoEnterEnabled(isPlaying)
-            .setSeamlessResizeEnabled(true)
             .setActions(actions)
-            .build()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(isPlaying)
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun createRemoteAction(iconRes: Int, title: String, controlType: Int): RemoteAction {
         val intent = Intent(PIP_ACTION_CONTROL).apply {
             setPackage(packageName)
@@ -247,14 +279,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestModernPermissions() {
-        permissionLauncher.launch(
-            arrayOf(
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        )
-        if (!Environment.isExternalStorageManager()) {
-            // Opcional: o usuário também pode usar SAF diretamente para Pen Drive OTG
+        val permissionsToRequest = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+        if (permissionsToRequest.isNotEmpty()) {
+            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
             runCatching {
                 val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                     data = Uri.parse("package:$packageName")
@@ -265,7 +304,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        unregisterReceiver(pipReceiver)
+        runCatching { unregisterReceiver(pipReceiver) }
         if (isBound) {
             unbindService(serviceConnection)
             isBound = false
@@ -1011,7 +1050,9 @@ fun FullScreenControls(
     summary: 'Modo Split-Screen 9": Mini-Player contínuo à esquerda + Navegação por pastas/subpastas (breadcrumbs e Voltar) + Seletor manual do modo Todas + Miniaturas em cache (LruCache)',
     content: `package com.autocine.player.ui
 
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -1113,12 +1154,24 @@ private fun VideoListThumbnail(
                     val retriever = MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(context, item.uri)
-                        retriever.getScaledFrameAtTime(
-                            1_500_000L,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                            192,
-                            108
-                        )?.asImageBitmap()
+                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            retriever.getScaledFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                192,
+                                108
+                            )
+                        } else {
+                            retriever.getFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )?.let { full ->
+                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
+                                if (scaled != full) full.recycle()
+                                scaled
+                            }
+                        }
+                        frame?.asImageBitmap()
                     } finally {
                         retriever.release()
                     }

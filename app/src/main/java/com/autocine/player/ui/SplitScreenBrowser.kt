@@ -1,6 +1,8 @@
 package com.autocine.player.ui
 
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.LruCache
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -102,12 +104,24 @@ private fun VideoListThumbnail(
                     val retriever = MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(context, item.uri)
-                        retriever.getScaledFrameAtTime(
-                            1_500_000L,
-                            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                            192,
-                            108
-                        )?.asImageBitmap()
+                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            retriever.getScaledFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                192,
+                                108
+                            )
+                        } else {
+                            retriever.getFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )?.let { full ->
+                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
+                                if (scaled != full) full.recycle()
+                                scaled
+                            }
+                        }
+                        frame?.asImageBitmap()
                     } finally {
                         retriever.release()
                     }

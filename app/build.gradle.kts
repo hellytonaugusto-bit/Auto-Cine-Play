@@ -10,13 +10,22 @@ android {
 
     defaultConfig {
         applicationId = "com.autocine.player"
-        minSdk = 35
+        minSdk = 24
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
         vectorDrawables {
             useSupportLibrary = true
+        }
+    }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = false
         }
     }
 
