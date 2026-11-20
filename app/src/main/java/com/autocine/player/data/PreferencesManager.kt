@@ -3,7 +3,6 @@ package com.autocine.player.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -31,10 +30,22 @@ enum class StorageSlot(val label: String) {
     INTERNAL("Interna")
 }
 
-enum class VolumeGestureMode(val label: String) {
-    DISABLED("Desativado"),
-    APP_INTERNAL("Interno do App")
-}
+/**
+ * Snapshot persistido de forma síncrona (SharedPreferences) para retomar automaticamente
+ * o último vídeo, pasta/subpasta de origem e posição exata mesmo se o app for fechado abruptamente.
+ */
+data class LastPlaybackSnapshot(
+    val videoId: String = "",
+    val videoUri: String = "",
+    val videoName: String = "",
+    val folderUri: String = "",
+    val folderName: String = "",
+    val relativePath: List<String> = emptyList(),
+    val storageSlot: StorageSlot = StorageSlot.USB,
+    val isAllFoldersMode: Boolean = false,
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L
+)
 
 data class SavedPlayerPrefs(
     val folderUri: String = "",
@@ -53,12 +64,31 @@ data class SavedPlayerPrefs(
     val aspectRatio: AspectRatioOption = AspectRatioOption.FIT,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
-    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
-    val volumeGestureMode: VolumeGestureMode = VolumeGestureMode.DISABLED,
-    val vlcInternalVolumePercent: Int = 100
+    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE
 )
 
 class PreferencesManager(private val context: Context) {
+
+    companion object {
+        private const val RESUME_PREFS_NAME = "autocine_resume_sync"
+        private const val PATH_SEPARATOR = "\u001F"
+
+        private const val SYNC_VIDEO_ID = "sync_video_id"
+        private const val SYNC_VIDEO_URI = "sync_video_uri"
+        private const val SYNC_VIDEO_NAME = "sync_video_name"
+        private const val SYNC_FOLDER_URI = "sync_folder_uri"
+        private const val SYNC_FOLDER_NAME = "sync_folder_name"
+        private const val SYNC_RELATIVE_PATH = "sync_relative_path"
+        private const val SYNC_STORAGE_SLOT = "sync_storage_slot"
+        private const val SYNC_IS_ALL_MODE = "sync_is_all_mode"
+        private const val SYNC_POSITION_MS = "sync_position_ms"
+        private const val SYNC_DURATION_MS = "sync_duration_ms"
+    }
+
+    private val resumePrefs = context.applicationContext.getSharedPreferences(
+        RESUME_PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
 
     private object Keys {
         val FOLDER_URI = stringPreferencesKey("saved_folder_uri")
@@ -78,8 +108,6 @@ class PreferencesManager(private val context: Context) {
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val UI_SCALE_LEVEL = stringPreferencesKey("ui_scale_level")
         val COLOR_THEME = stringPreferencesKey("color_theme")
-        val VOLUME_GESTURE_MODE = stringPreferencesKey("volume_gesture_mode")
-        val VLC_INTERNAL_VOLUME_PERCENT = intPreferencesKey("vlc_internal_volume_percent")
     }
 
     val prefsFlow: Flow<SavedPlayerPrefs> = context.dataStore.data.map { prefs ->
@@ -112,12 +140,58 @@ class PreferencesManager(private val context: Context) {
                 ?: UiScaleLevel.DEFAULT,
             colorTheme = prefs[Keys.COLOR_THEME]
                 ?.let { runCatching { AppColorTheme.valueOf(it) }.getOrNull() }
-                ?: AppColorTheme.AUTOMOTIVE_BLUE,
-            volumeGestureMode = prefs[Keys.VOLUME_GESTURE_MODE]
-                ?.let { runCatching { VolumeGestureMode.valueOf(it) }.getOrNull() }
-                ?: VolumeGestureMode.DISABLED,
-            vlcInternalVolumePercent = (prefs[Keys.VLC_INTERNAL_VOLUME_PERCENT] ?: 100).coerceIn(0, 100)
+                ?: AppColorTheme.AUTOMOTIVE_BLUE
         )
+    }
+
+    fun readLastPlaybackSync(): LastPlaybackSnapshot {
+        val rawPath = resumePrefs.getString(SYNC_RELATIVE_PATH, "").orEmpty()
+        val relPath = if (rawPath.isEmpty()) emptyList() else rawPath.split(PATH_SEPARATOR).filter { it.isNotEmpty() }
+        val slot = resumePrefs.getString(SYNC_STORAGE_SLOT, null)
+            ?.let { runCatching { StorageSlot.valueOf(it) }.getOrNull() }
+            ?: StorageSlot.USB
+        return LastPlaybackSnapshot(
+            videoId = resumePrefs.getString(SYNC_VIDEO_ID, "").orEmpty(),
+            videoUri = resumePrefs.getString(SYNC_VIDEO_URI, "").orEmpty(),
+            videoName = resumePrefs.getString(SYNC_VIDEO_NAME, "").orEmpty(),
+            folderUri = resumePrefs.getString(SYNC_FOLDER_URI, "").orEmpty(),
+            folderName = resumePrefs.getString(SYNC_FOLDER_NAME, "").orEmpty(),
+            relativePath = relPath,
+            storageSlot = slot,
+            isAllFoldersMode = resumePrefs.getBoolean(SYNC_IS_ALL_MODE, false),
+            positionMs = resumePrefs.getLong(SYNC_POSITION_MS, 0L).coerceAtLeast(0L),
+            durationMs = resumePrefs.getLong(SYNC_DURATION_MS, 0L).coerceAtLeast(0L)
+        )
+    }
+
+    fun saveLastPlaybackSync(snapshot: LastPlaybackSnapshot, commitImmediately: Boolean = false) {
+        val editor = resumePrefs.edit()
+            .putString(SYNC_VIDEO_ID, snapshot.videoId)
+            .putString(SYNC_VIDEO_URI, snapshot.videoUri)
+            .putString(SYNC_VIDEO_NAME, snapshot.videoName)
+            .putString(SYNC_FOLDER_URI, snapshot.folderUri)
+            .putString(SYNC_FOLDER_NAME, snapshot.folderName)
+            .putString(SYNC_RELATIVE_PATH, snapshot.relativePath.joinToString(PATH_SEPARATOR))
+            .putString(SYNC_STORAGE_SLOT, snapshot.storageSlot.name)
+            .putBoolean(SYNC_IS_ALL_MODE, snapshot.isAllFoldersMode)
+            .putLong(SYNC_POSITION_MS, snapshot.positionMs.coerceAtLeast(0L))
+            .putLong(SYNC_DURATION_MS, snapshot.durationMs.coerceAtLeast(0L))
+        if (commitImmediately) {
+            editor.commit()
+        } else {
+            editor.apply()
+        }
+    }
+
+    fun saveLastPositionSync(positionMs: Long, durationMs: Long, commitImmediately: Boolean = false) {
+        val editor = resumePrefs.edit()
+            .putLong(SYNC_POSITION_MS, positionMs.coerceAtLeast(0L))
+            .putLong(SYNC_DURATION_MS, durationMs.coerceAtLeast(0L))
+        if (commitImmediately) {
+            editor.commit()
+        } else {
+            editor.apply()
+        }
     }
 
     suspend fun saveFolder(uri: String, displayName: String, slot: StorageSlot = StorageSlot.USB) {
@@ -187,13 +261,5 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun saveColorTheme(theme: AppColorTheme) {
         context.dataStore.edit { it[Keys.COLOR_THEME] = theme.name }
-    }
-
-    suspend fun saveVolumeGestureMode(mode: VolumeGestureMode) {
-        context.dataStore.edit { it[Keys.VOLUME_GESTURE_MODE] = mode.name }
-    }
-
-    suspend fun saveVlcInternalVolumePercent(percent: Int) {
-        context.dataStore.edit { it[Keys.VLC_INTERNAL_VOLUME_PERCENT] = percent.coerceIn(0, 100) }
     }
 }

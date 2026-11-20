@@ -89,7 +89,6 @@ import androidx.compose.ui.unit.sp
 import com.autocine.player.data.FolderEntry
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
-import com.autocine.player.data.VolumeGestureMode
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.LocalAutoCinePalette
 import com.autocine.player.ui.theme.UiScaleLevel
@@ -491,7 +490,6 @@ fun SplitScreenFileList(
     onDismissSettings: () -> Unit,
     onSelectUiScale: (UiScaleLevel) -> Unit,
     onSelectColorTheme: (AppColorTheme) -> Unit,
-    onSelectVolumeGestureMode: (VolumeGestureMode) -> Unit,
     onSearchChange: (String) -> Unit,
     onRefresh: () -> Unit,
     onCycleSort: () -> Unit,
@@ -823,15 +821,13 @@ fun SplitScreenFileList(
         }
     }
 
-    // Modal de Configurações (Tamanho da Interface + Tema de Cores + Gesto de Volume na Tela)
+    // Modal de Configurações (Tamanho da Interface + Tema de Cores)
     if (state.isSettingsOpen) {
         SettingsDialog(
             currentScale = state.uiScaleLevel,
             currentTheme = state.colorTheme,
-            currentVolumeGestureMode = state.volumeGestureMode,
             onSelectScale = onSelectUiScale,
             onSelectTheme = onSelectColorTheme,
-            onSelectVolumeGestureMode = onSelectVolumeGestureMode,
             onDismiss = onDismissSettings
         )
     }
@@ -877,10 +873,8 @@ fun SplitScreenFileList(
 private fun SettingsDialog(
     currentScale: UiScaleLevel,
     currentTheme: AppColorTheme,
-    currentVolumeGestureMode: VolumeGestureMode,
     onSelectScale: (UiScaleLevel) -> Unit,
     onSelectTheme: (AppColorTheme) -> Unit,
-    onSelectVolumeGestureMode: (VolumeGestureMode) -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
@@ -1033,69 +1027,6 @@ private fun SettingsDialog(
                         }
                     }
                 }
-
-                HorizontalDivider(color = Color(0x18FFFFFF))
-
-                // 3. Gesto de Volume na Tela (Desativado por padrão / Interno do App)
-                Text(
-                    text = "Gesto de Volume na Tela",
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    VolumeGestureMode.entries.forEach { mode ->
-                        val selected = mode == currentVolumeGestureMode
-                        Surface(
-                            onClick = { onSelectVolumeGestureMode(mode) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (selected) palette.accentDark else Color(0xFF1A2234),
-                            border = BorderStroke(
-                                width = if (selected) 1.5.dp else 1.dp,
-                                color = if (selected) palette.accent else Color(0x26FFFFFF)
-                            ),
-                            modifier = Modifier.weight(1f).height(48.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.padding(horizontal = 8.dp)
-                            ) {
-                                if (selected) {
-                                    Icon(
-                                        Icons.Rounded.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                }
-                                Text(
-                                    text = mode.label,
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Text(
-                    text = if (currentVolumeGestureMode == VolumeGestureMode.DISABLED) {
-                        "Gesto direito desativado (volume interno fixo em 100%; use os botões da multimídia ou volante)."
-                    } else {
-                        "Deslizar na vertical à direita ajusta o volume interno da libVLC (0% a 100%)."
-                    },
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
-                )
             }
         },
         confirmButton = {

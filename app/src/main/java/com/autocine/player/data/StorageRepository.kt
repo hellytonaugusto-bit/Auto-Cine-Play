@@ -135,6 +135,31 @@ class StorageRepository(private val context: Context) {
     }
 
     /**
+     * Verifica rapidamente em Dispatchers.IO se a URI/caminho do último vídeo salvo
+     * ainda existe e está acessível (Pen Drive, Cartão SD ou Memória Interna).
+     */
+    suspend fun isVideoUriAccessible(uriString: String): Boolean = withContext(Dispatchers.IO) {
+        if (uriString.isBlank()) return@withContext false
+        runCatching {
+            val uri = Uri.parse(uriString)
+            when (uri.scheme) {
+                "content" -> {
+                    context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+                }
+                "file" -> {
+                    val path = uri.path ?: return@runCatching false
+                    val file = File(path)
+                    file.exists() && file.isFile && file.canRead()
+                }
+                else -> {
+                    val file = File(uriString)
+                    file.exists() && file.isFile && file.canRead()
+                }
+            }
+        }.getOrDefault(false)
+    }
+
+    /**
      * Lista subpastas imediatas + vídeos do diretório atual de forma ultrarrápida:
      * 1) Usa cache em memória (0 ms) quando já visitado (a menos que forceRefresh == true).
      * 2) Prefere acesso físico direto via java.io.File.listFiles() sempre que acessível.

@@ -48,6 +48,7 @@ import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -162,7 +163,9 @@ class MainActivity : ComponentActivity() {
                         openFolderLauncher.launch(null)
                     },
                     onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
-                    onGetBrightness = { getWindowBrightness() }
+                    onGetBrightness = { getWindowBrightness() },
+                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
+                    onGetVolume = { getMediaVolume() }
                 )
             }
         }
@@ -181,18 +184,18 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onPause() {
-        viewModel.persistPlaybackPosition()
+        viewModel.persistPlaybackPosition(commitImmediately = false)
         super.onPause()
     }
 
     override fun onStop() {
-        viewModel.persistPlaybackPosition()
+        viewModel.persistPlaybackPosition(commitImmediately = true)
         super.onStop()
     }
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        viewModel.persistPlaybackPosition()
+        viewModel.persistPlaybackPosition(commitImmediately = false)
         if (viewModel.uiState.value.isPlaying) {
             enterPipNow()
         }
@@ -321,6 +324,36 @@ class MainActivity : ComponentActivity() {
         return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
+    /**
+     * Ajusta o volume de mídia do sistema Android (AudioManager.STREAM_MUSIC) via setStreamVolume
+     * com FLAG_SHOW_UI e retorna a porcentagem real atual (getStreamVolume / getStreamMaxVolume).
+     */
+    private fun setMediaVolume(fraction: Float): Float {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return fraction.coerceIn(0f, 1f)
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val target = (fraction.coerceIn(0f, 1f) * maxVol).roundToInt().coerceIn(0, maxVol)
+        if (target != current) {
+            runCatching {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    target,
+                    AudioManager.FLAG_SHOW_UI
+                )
+            }
+        }
+        val actual = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)
+        return (actual.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)
+    }
+
+    private fun getMediaVolume(): Float {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 0.5f
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)
+        return (current.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)
+    }
+
     private fun requestModernPermissions() {
         val permissionsToRequest = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -347,7 +380,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        viewModel.persistPlaybackPosition()
+        viewModel.persistPlaybackPosition(commitImmediately = true)
         runCatching { unregisterReceiver(pipReceiver) }
         if (isBound) {
             unbindService(serviceConnection)

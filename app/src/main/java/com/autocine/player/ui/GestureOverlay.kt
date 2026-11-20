@@ -5,8 +5,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,14 +61,13 @@ fun GestureOverlay(
     onGetBrightness: () -> Float,
     onAdjustBrightness: (Float) -> Unit,
     onGetVolume: () -> Float,
-    onAdjustVolume: (Float) -> Unit,
-    volumeGestureEnabled: Boolean = false,
+    onAdjustVolume: (Float) -> Float,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalAutoCinePalette.current
     val scope = rememberCoroutineScope()
 
-    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (corrige congelamento do HUD)
+    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (evita congelamento do HUD)
     val latestPositionMs by rememberUpdatedState(positionMs)
     val latestDurationMs by rememberUpdatedState(durationMs)
     val latestOnTap by rememberUpdatedState(onTapToggleControls)
@@ -77,10 +76,9 @@ fun GestureOverlay(
     val latestOnAdjustBrightness by rememberUpdatedState(onAdjustBrightness)
     val latestOnGetVolume by rememberUpdatedState(onGetVolume)
     val latestOnAdjustVolume by rememberUpdatedState(onAdjustVolume)
-    val latestVolumeGestureEnabled by rememberUpdatedState(volumeGestureEnabled)
 
     var hudVisible by remember { mutableStateOf(false) }
-    var displayAxis by remember { mutableStateOf(GestureAxis.VOLUME) }
+    var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }
     var hudValue by remember { mutableFloatStateOf(0f) }
     var hudSeekTargetMs by remember { mutableLongStateOf(0L) }
     var hudSeekDeltaSec by remember { mutableLongStateOf(0L) }
@@ -89,7 +87,7 @@ fun GestureOverlay(
     fun scheduleHudDismiss() {
         hideHudJob?.cancel()
         hideHudJob = scope.launch {
-            delay(600L)
+            delay(650L)
             hudVisible = false
         }
     }
@@ -105,95 +103,102 @@ fun GestureOverlay(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { latestOnTap() })
-            }
-            .pointerInput(Unit) {
-                var activeAxis = GestureAxis.NONE
-                var totalDx = 0f
-                var totalDy = 0f
-                var startX = 0f
-                var startValue = 0f
-                var startPosMs = 0L
-                var dragTargetMs = 0L
+                // Detector unificado (awaitEachGesture) para evitar conflito entre toque e arrasto:
+                // - Toque simples alterna controles
+                // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)
+                // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)
+                // - Arrasto vertical na metade DIREITA: volume de mídia Android (STREAM_MUSIC)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = true)
+                    val downPos = down.position
+                    val startX = downPos.x
+                    val touchSlop = viewConfiguration.touchSlop.coerceAtLeast(18f)
 
-                detectDragGestures(
-                    onDragStart = { offset ->
-                        hideHudJob?.cancel()
-                        activeAxis = GestureAxis.NONE
-                        totalDx = 0f
-                        totalDy = 0f
-                        startX = offset.x
-                        startPosMs = latestPositionMs
-                        dragTargetMs = latestPositionMs
-                    },
-                    onDragEnd = {
-                        if (activeAxis == GestureAxis.SEEK) {
-                            latestOnSeekCommit(dragTargetMs)
-                        }
-                        activeAxis = GestureAxis.NONE
-                        scheduleHudDismiss()
-                    },
-                    onDragCancel = {
-                        activeAxis = GestureAxis.NONE
-                        scheduleHudDismiss()
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        totalDx += dragAmount.x
-                        totalDy += dragAmount.y
+                    var activeAxis = GestureAxis.NONE
+                    var startValue = 0f
+                    val startPosMs = latestPositionMs
+                    var dragTargetMs = startPosMs
+                    var pointerMovedBeyondSlop = false
 
-                        if (activeAxis == GestureAxis.NONE) {
-                            val threshold = 22f
-                            if (abs(totalDx) < threshold && abs(totalDy) < threshold) {
-                                return@detectDragGestures
-                            }
-                            hideHudJob?.cancel()
-                            activeAxis = when {
-                                abs(totalDx) >= abs(totalDy) * 1.15f -> GestureAxis.SEEK
-                                startX < size.width / 2f -> {
-                                    startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
-                                    GestureAxis.BRIGHTNESS
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                            if (!change.pressed) {
+                                if (activeAxis == GestureAxis.SEEK) {
+                                    latestOnSeekCommit(dragTargetMs)
+                                } else if (!pointerMovedBeyondSlop && !change.isConsumed) {
+                                    latestOnTap()
                                 }
-                                latestVolumeGestureEnabled -> {
-                                    startValue = latestOnGetVolume().coerceIn(0f, 1f)
-                                    GestureAxis.VOLUME
-                                }
-                                else -> GestureAxis.NONE
+                                break
                             }
+
+                            if (activeAxis == GestureAxis.NONE && change.isConsumed) {
+                                break
+                            }
+
+                            val totalDx = change.position.x - downPos.x
+                            val totalDy = change.position.y - downPos.y
+
                             if (activeAxis == GestureAxis.NONE) {
-                                return@detectDragGestures
-                            }
-                            displayAxis = activeAxis
-                            hudVisible = true
-                        }
+                                if (abs(totalDx) < touchSlop && abs(totalDy) < touchSlop) {
+                                    continue
+                                }
+                                pointerMovedBeyondSlop = true
+                                hideHudJob?.cancel()
 
-                        when (activeAxis) {
-                            GestureAxis.SEEK -> {
-                                val dur = latestDurationMs.coerceAtLeast(0L)
-                                val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)
-                                val widthPx = size.width.coerceAtLeast(1).toFloat()
-                                val deltaMs = ((totalDx / widthPx) * spanMs).toLong()
-                                val target = (startPosMs + deltaMs).coerceIn(0L, dur)
-                                dragTargetMs = target
-                                hudSeekTargetMs = target
-                                hudSeekDeltaSec = (target - startPosMs) / 1000L
+                                activeAxis = when {
+                                    abs(totalDx) > abs(totalDy) * 1.25f -> GestureAxis.SEEK
+                                    startX < size.width / 2f -> {
+                                        startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
+                                        hudValue = startValue
+                                        GestureAxis.BRIGHTNESS
+                                    }
+                                    else -> {
+                                        startValue = latestOnGetVolume().coerceIn(0f, 1f)
+                                        hudValue = startValue
+                                        GestureAxis.VOLUME
+                                    }
+                                }
+                                displayAxis = activeAxis
+                                hudVisible = true
                             }
-                            GestureAxis.BRIGHTNESS -> {
-                                val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
-                                val next = (startValue + (-totalDy / effectiveH)).coerceIn(0.05f, 1f)
-                                hudValue = next
-                                latestOnAdjustBrightness(next)
+
+                            change.consume()
+
+                            when (activeAxis) {
+                                GestureAxis.SEEK -> {
+                                    val dur = latestDurationMs.coerceAtLeast(0L)
+                                    val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)
+                                    val widthPx = size.width.coerceAtLeast(1).toFloat()
+                                    val deltaMs = ((totalDx / widthPx) * spanMs).toLong()
+                                    val target = (startPosMs + deltaMs).coerceIn(0L, dur)
+                                    dragTargetMs = target
+                                    hudSeekTargetMs = target
+                                    hudSeekDeltaSec = (target - startPosMs) / 1000L
+                                }
+                                GestureAxis.BRIGHTNESS -> {
+                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
+                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0.05f, 1f)
+                                    hudValue = next
+                                    latestOnAdjustBrightness(next)
+                                }
+                                GestureAxis.VOLUME -> {
+                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
+                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0f, 1f)
+                                    val realSystemRatio = latestOnAdjustVolume(next).coerceIn(0f, 1f)
+                                    hudValue = realSystemRatio
+                                }
+                                GestureAxis.NONE -> Unit
                             }
-                            GestureAxis.VOLUME -> {
-                                val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
-                                val next = (startValue + (-totalDy / effectiveH)).coerceIn(0f, 1f)
-                                hudValue = next
-                                latestOnAdjustVolume(next)
-                            }
-                            GestureAxis.NONE -> Unit
+                        }
+                    } finally {
+                        if (activeAxis != GestureAxis.NONE) {
+                            scheduleHudDismiss()
                         }
                     }
-                )
+                }
             }
     ) {
         AnimatedVisibility(

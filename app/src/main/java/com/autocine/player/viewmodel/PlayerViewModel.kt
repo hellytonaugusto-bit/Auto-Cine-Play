@@ -1,18 +1,19 @@
 package com.autocine.player.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import android.os.Environment
 import android.os.SystemClock
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocine.player.data.FolderEntry
+import com.autocine.player.data.LastPlaybackSnapshot
 import com.autocine.player.data.PlaybackMode
 import com.autocine.player.data.PreferencesManager
 import com.autocine.player.data.SortOrder
 import com.autocine.player.data.StorageRepository
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
-import com.autocine.player.data.VolumeGestureMode
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
@@ -43,8 +44,6 @@ data class PlayerUiState(
     val isSettingsOpen: Boolean = false,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
-    val volumeGestureMode: VolumeGestureMode = VolumeGestureMode.DISABLED,
-    val internalVolumePercent: Int = 100,
     val allVideos: List<VideoFileItem> = emptyList(),
     val browsedVideos: List<VideoFileItem> = emptyList(),
     val visibleVideos: List<VideoFileItem> = emptyList(),
@@ -75,58 +74,113 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var savedResumePositionMs: Long = 0L
     private var lastPositionSavedElapsedMs: Long = 0L
 
+    // Metadados da pasta/origem da fila atualmente em reprodução (salvos para retomada exata ao reabrir o app)
+    private var activeQueueRootUri: String = ""
+    private var activeQueueRootName: String = ""
+    private var activeQueueRelativePath: List<String> = emptyList()
+    private var activeQueueStorageSlot: StorageSlot = StorageSlot.USB
+    private var activeQueueIsAllMode: Boolean = false
+
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch {
             val saved = prefs.prefsFlow.first()
+            val syncResume = prefs.readLastPlaybackSync()
             val savedSelection = if (saved.allFilterCustomized) saved.selectedAllFolderIds else null
-            savedResumeVideoId = saved.lastVideoId
-            savedResumePositionMs = saved.lastPositionMs
+
+            val rawPos = syncResume.positionMs.coerceAtLeast(saved.lastPositionMs)
+            val rawDur = syncResume.durationMs
+            // Se o vídeo já estava nos últimos 5 segundos, reinicia do começo ao reabrir
+            val effectiveResumeMs = if (rawDur > 10_000L && rawPos >= rawDur - 5_000L) 0L else rawPos
+
+            val resumeFolderUri = syncResume.folderUri.ifEmpty { saved.folderUri }
+            val resumeFolderName = syncResume.folderName.ifEmpty { saved.folderDisplayName }
+            val resumeSlot = if (syncResume.videoUri.isNotEmpty()) syncResume.storageSlot else saved.activeStorageSlot
+            val resumeIsAll = if (syncResume.videoUri.isNotEmpty()) syncResume.isAllFoldersMode else saved.playAllFolders
+            val resumeRelPath = if (syncResume.videoUri.isNotEmpty() && !resumeIsAll) syncResume.relativePath else emptyList()
+
+            val canResumeDirect = syncResume.videoUri.isNotEmpty() &&
+                repository.isVideoUriAccessible(syncResume.videoUri)
+
+            val restoredVideo = if (canResumeDirect) {
+                val restoredId = syncResume.videoId.ifEmpty { syncResume.videoUri }
+                VideoFileItem(
+                    id = restoredId,
+                    uri = Uri.parse(syncResume.videoUri),
+                    name = syncResume.videoName.ifEmpty { "Vídeo" },
+                    sizeBytes = 0L,
+                    lastModified = 0L,
+                    isSafDocument = syncResume.videoUri.startsWith("content://"),
+                    folderName = resumeRelPath.lastOrNull() ?: resumeFolderName,
+                    folderId = ""
+                )
+            } else {
+                null
+            }
+
+            savedResumeVideoId = restoredVideo?.id ?: saved.lastVideoId
+            savedResumePositionMs = effectiveResumeMs
+            activeQueueRootUri = resumeFolderUri
+            activeQueueRootName = resumeFolderName
+            activeQueueRelativePath = resumeRelPath
+            activeQueueStorageSlot = resumeSlot
+            activeQueueIsAllMode = resumeIsAll
+
+            val displayTitle = when {
+                resumeIsAll -> "Todas as Pastas"
+                resumeRelPath.isNotEmpty() -> resumeRelPath.last()
+                else -> resumeFolderName
+            }
 
             _uiState.update {
                 it.copy(
-                    folderUri = saved.folderUri,
-                    rootFolderName = saved.folderDisplayName,
-                    folderName = if (saved.playAllFolders) "Todas as Pastas" else saved.folderDisplayName,
-                    activeStorageSlot = if (saved.playAllFolders) StorageSlot.ALL else saved.activeStorageSlot,
+                    folderUri = resumeFolderUri,
+                    rootFolderName = resumeFolderName,
+                    folderName = displayTitle,
+                    activeStorageSlot = if (resumeIsAll) StorageSlot.ALL else resumeSlot,
                     usbFolderUri = saved.usbFolderUri,
                     usbFolderName = saved.usbFolderName,
                     sdFolderUri = saved.sdFolderUri,
                     sdFolderName = saved.sdFolderName,
-                    isAllFoldersMode = saved.playAllFolders,
+                    folderBreadcrumbs = resumeRelPath,
+                    isAllFoldersMode = resumeIsAll,
                     selectedAllFolderIds = savedSelection,
+                    currentVideo = restoredVideo ?: it.currentVideo,
+                    positionMs = if (restoredVideo != null) effectiveResumeMs else it.positionMs,
+                    durationMs = if (restoredVideo != null) rawDur else it.durationMs,
+                    isSplitScreen = false,
                     playbackMode = saved.playbackMode,
                     aspectRatio = saved.aspectRatio,
                     sortOrder = saved.sortOrder,
                     uiScaleLevel = saved.uiScaleLevel,
-                    colorTheme = saved.colorTheme,
-                    volumeGestureMode = saved.volumeGestureMode,
-                    internalVolumePercent = saved.vlcInternalVolumePercent
+                    colorTheme = saved.colorTheme
                 )
             }
-            service?.engine?.apply {
-                applyAspectRatio(saved.aspectRatio)
-                setInternalVolumeEnabled(saved.volumeGestureMode == VolumeGestureMode.APP_INTERNAL)
-                setInternalVolume(saved.vlcInternalVolumePercent)
+            service?.engine?.applyAspectRatio(saved.aspectRatio)
+
+            // Se o último vídeo salvo ainda está acessível e o serviço já conectou, inicia imediatamente em tela cheia
+            if (restoredVideo != null && service != null) {
+                playVideo(restoredVideo, resumePositionMs = effectiveResumeMs, forceRestart = false)
             }
 
-            if (saved.playAllFolders) {
+            // Carrega a pasta/subpasta (ou Todas) em segundo plano para popular a fila sem interromper a retomada
+            if (resumeIsAll) {
                 loadAllFolders(
-                    savedFolderUri = saved.folderUri,
+                    savedFolderUri = resumeFolderUri,
                     selectedFolderIds = savedSelection,
-                    autoResumeVideoId = saved.lastVideoId,
+                    autoResumeVideoId = savedResumeVideoId,
                     forceRefresh = false
                 )
-            } else if (saved.folderUri.isNotEmpty()) {
+            } else if (resumeFolderUri.isNotEmpty()) {
                 loadDirectory(
-                    uriString = saved.folderUri,
-                    rootName = saved.folderDisplayName,
-                    slot = saved.activeStorageSlot,
-                    relativePath = emptyList(),
+                    uriString = resumeFolderUri,
+                    rootName = resumeFolderName,
+                    slot = resumeSlot,
+                    relativePath = resumeRelPath,
                     knownDocumentId = null,
-                    autoResumeVideoId = saved.lastVideoId,
+                    autoResumeVideoId = savedResumeVideoId,
                     replaceActiveQueue = true,
                     forceRefresh = false
                 )
@@ -139,13 +193,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val engine = playbackService.engine
         val currentState = _uiState.value
         engine.applyAspectRatio(currentState.aspectRatio)
-        engine.setInternalVolumeEnabled(currentState.volumeGestureMode == VolumeGestureMode.APP_INTERNAL)
-        engine.setInternalVolume(currentState.internalVolumePercent)
 
         engine.onPlayingChanged = { playing ->
             _uiState.update { it.copy(isPlaying = playing) }
             val title = _uiState.value.currentVideo?.name ?: "AutoCine Player"
             playbackService.updateNotification(title, playing)
+            if (!playing) {
+                persistPlaybackPosition(commitImmediately = false)
+            }
         }
         engine.onTimeChanged = { pos, dur ->
             _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
@@ -153,6 +208,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (pos > 0L && now - lastPositionSavedElapsedMs >= 3000L) {
                 lastPositionSavedElapsedMs = now
                 savedResumePositionMs = pos
+                prefs.saveLastPositionSync(pos, dur, commitImmediately = false)
                 viewModelScope.launch { prefs.saveLastPositionMs(pos) }
             }
         }
@@ -183,7 +239,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        // Cold start: nenhuma mídia carregada ainda no engine — retoma do ponto salvo
+        // Cold start: nenhuma mídia carregada ainda no engine — retoma automaticamente do ponto salvo em tela cheia
         val current = _uiState.value.currentVideo
         if (current != null) {
             val resumeMs = if (current.id == savedResumeVideoId) savedResumePositionMs else 0L
@@ -191,12 +247,42 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun persistPlaybackPosition() {
-        val pos = service?.engine?.getPositionMs() ?: _uiState.value.positionMs
+    fun persistPlaybackPosition(commitImmediately: Boolean = false) {
+        val state = _uiState.value
+        val video = state.currentVideo ?: return
+        val pos = service?.engine?.getPositionMs()?.takeIf { it > 0L } ?: state.positionMs
+        val dur = service?.engine?.getDurationMs()?.takeIf { it > 0L } ?: state.durationMs
+        savedResumePositionMs = pos
+        saveCurrentSnapshotSync(video, pos, dur, commitImmediately = commitImmediately)
         if (pos > 0L) {
-            savedResumePositionMs = pos
             viewModelScope.launch { prefs.saveLastPositionMs(pos) }
         }
+    }
+
+    private fun saveCurrentSnapshotSync(
+        video: VideoFileItem,
+        positionMs: Long,
+        durationMs: Long,
+        commitImmediately: Boolean
+    ) {
+        val state = _uiState.value
+        val rootUri = activeQueueRootUri.ifEmpty { state.folderUri }
+        val rootName = activeQueueRootName.ifEmpty { state.rootFolderName }
+        prefs.saveLastPlaybackSync(
+            snapshot = LastPlaybackSnapshot(
+                videoId = video.id,
+                videoUri = video.uri.toString(),
+                videoName = video.name,
+                folderUri = rootUri,
+                folderName = rootName,
+                relativePath = activeQueueRelativePath,
+                storageSlot = activeQueueStorageSlot,
+                isAllFoldersMode = activeQueueIsAllMode,
+                positionMs = positionMs.coerceAtLeast(0L),
+                durationMs = durationMs.coerceAtLeast(0L)
+            ),
+            commitImmediately = commitImmediately
+        )
     }
 
     fun onFolderSelected(uriString: String, displayName: String, slot: StorageSlot = StorageSlot.USB) {
@@ -491,28 +577,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { prefs.saveColorTheme(theme) }
     }
 
-    fun setVolumeGestureMode(mode: VolumeGestureMode) {
-        _uiState.update { it.copy(volumeGestureMode = mode) }
-        val useInternal = mode == VolumeGestureMode.APP_INTERNAL
-        service?.engine?.setInternalVolumeEnabled(useInternal)
-        if (useInternal) {
-            service?.engine?.setInternalVolume(_uiState.value.internalVolumePercent)
-        }
-        viewModelScope.launch { prefs.saveVolumeGestureMode(mode) }
-    }
-
-    fun getInternalVolumeFraction(): Float {
-        val pct = service?.engine?.getInternalVolume() ?: _uiState.value.internalVolumePercent
-        return (pct / 100f).coerceIn(0f, 1f)
-    }
-
-    fun setInternalVolumeFraction(fraction: Float) {
-        val pct = (fraction.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
-        _uiState.update { it.copy(internalVolumePercent = pct) }
-        service?.engine?.setInternalVolume(pct)
-        viewModelScope.launch { prefs.saveVlcInternalVolumePercent(pct) }
-    }
-
     /**
      * Único ponto onde o cache em memória é invalidado para reescanear o Pen Drive / armazenamento.
      */
@@ -618,12 +682,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val engine = service?.engine
         val activeUri = if (engine?.hasActiveMedia() == true) engine.currentMediaUri else null
 
-        // Se o serviço já estiver reproduzindo um vídeo, apenas sincroniza a fila sem reiniciar do 00:00
+        // Se o serviço já estiver reproduzindo um vídeo (ou retomando o último vídeo salvo),
+        // apenas sincroniza a fila em segundo plano sem reiniciar do 00:00
         if (activeUri != null) {
-            val runningMatch = sorted.firstOrNull { it.uri == activeUri }
+            val runningMatch = sorted.firstOrNull { it.uri == activeUri || it.id == savedResumeVideoId }
             val existingCurrent = _uiState.value.currentVideo
             val target = runningMatch ?: existingCurrent ?: sorted.firstOrNull()
-            val idx = if (target != null) sorted.indexOfFirst { it.id == target.id } else -1
+            val idx = if (target != null) sorted.indexOfFirst { it.id == target.id || it.uri == target.uri } else -1
             _uiState.update {
                 it.copy(
                     allVideos = sorted,
@@ -641,8 +706,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         shuffleBackStack.clear()
-        val target = sorted.firstOrNull { it.id == autoResumeVideoId } ?: sorted.firstOrNull()
-        val idx = if (target != null) sorted.indexOf(target) else -1
+        val existingCurrent = _uiState.value.currentVideo
+        val target = sorted.firstOrNull { it.id == autoResumeVideoId || (existingCurrent != null && it.uri == existingCurrent.uri) }
+            ?: existingCurrent
+            ?: sorted.firstOrNull()
+        val idx = if (target != null) sorted.indexOfFirst { it.id == target.id || it.uri == target.uri } else -1
 
         _uiState.update {
             it.copy(
@@ -655,7 +723,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         if (target != null && service != null) {
-            val resumeMs = if (target.id == savedResumeVideoId) savedResumePositionMs else 0L
+            val resumeMs = if (target.id == savedResumeVideoId || target.uri == existingCurrent?.uri) savedResumePositionMs else 0L
             playVideo(target, resumePositionMs = resumeMs, forceRestart = false)
         }
     }
@@ -672,6 +740,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 pushShuffleHistory(prevId)
             }
         }
+        // Registra a pasta/subpasta/origem exata da fila que o usuário acabou de iniciar
+        activeQueueRootUri = state.folderUri
+        activeQueueRootName = state.rootFolderName
+        activeQueueRelativePath = if (state.isAllFoldersMode) emptyList() else state.folderBreadcrumbs
+        activeQueueStorageSlot = state.activeStorageSlot
+        activeQueueIsAllMode = state.isAllFoldersMode
+
         if (currentBrowsed.any { it.id == item.id }) {
             val idx = currentBrowsed.indexOfFirst { it.id == item.id }
             _uiState.update { it.copy(allVideos = currentBrowsed, currentIndexInFolder = idx) }
@@ -711,11 +786,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        val prevState = _uiState.value
+        val initialDurationMs = if (prevState.currentVideo?.id == item.id) prevState.durationMs else 0L
         savedResumeVideoId = item.id
         savedResumePositionMs = resumePositionMs
         _uiState.update {
-            it.copy(currentVideo = item, currentIndexInFolder = idx, positionMs = resumePositionMs)
+            it.copy(
+                currentVideo = item,
+                currentIndexInFolder = idx,
+                positionMs = resumePositionMs,
+                durationMs = initialDurationMs
+            )
         }
+        saveCurrentSnapshotSync(item, resumePositionMs, initialDurationMs, commitImmediately = false)
         svc.engine.applyAspectRatio(_uiState.value.aspectRatio)
         svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = forceRestart)
         svc.updateNotification(item.name, true)
@@ -727,7 +810,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun togglePlayPause() {
         val svc = service ?: return
-        if (!svc.engine.isPlaying()) {
+        if (svc.engine.isPlaying()) {
+            persistPlaybackPosition(commitImmediately = false)
+        } else {
             if (!svc.audioFocus.requestFocus()) return
         }
         svc.engine.togglePlayPause()

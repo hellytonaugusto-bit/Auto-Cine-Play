@@ -36,8 +36,6 @@ class VlcPlayerEngine(private val context: Context) {
     private var currentPfd: ParcelFileDescriptor? = null
     private var attachedLayout: VLCVideoLayout? = null
 
-    private var useInternalVolume: Boolean = false
-    private var internalVolumePercent: Int = FIXED_VLC_VOLUME
     private var duckMultiplier: Float = 1f
     private var currentAspectRatio: AspectRatioOption = AspectRatioOption.FIT
 
@@ -244,26 +242,13 @@ class VlcPlayerEngine(private val context: Context) {
 
     fun getDurationMs(): Long = mediaPlayer?.length?.coerceAtLeast(0L) ?: 0L
 
-    fun setInternalVolumeEnabled(enabled: Boolean) {
-        useInternalVolume = enabled
-        applyEffectiveVolume()
-    }
-
-    fun setInternalVolume(percent: Int) {
-        internalVolumePercent = percent.coerceIn(0, 100)
-        applyEffectiveVolume()
-    }
-
-    fun getInternalVolume(): Int = if (useInternalVolume) internalVolumePercent else FIXED_VLC_VOLUME
-
     fun setDucking(ducked: Boolean) {
         duckMultiplier = if (ducked) 0.25f else 1.0f
         applyEffectiveVolume()
     }
 
     private fun applyEffectiveVolume() {
-        val baseVolume = if (useInternalVolume) internalVolumePercent else FIXED_VLC_VOLUME
-        val effective = (baseVolume * duckMultiplier).toInt().coerceIn(0, 100)
+        val effective = (FIXED_VLC_VOLUME * duckMultiplier).toInt().coerceIn(0, FIXED_VLC_VOLUME)
         mediaPlayer?.setVolume(effective)
     }
 
