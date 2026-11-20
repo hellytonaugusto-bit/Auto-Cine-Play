@@ -1,6 +1,7 @@
 package com.autocine.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -35,6 +36,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -44,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autocine.player.data.PlaybackMode
+import com.autocine.player.ui.theme.LocalAutoCinePalette
 import com.autocine.player.viewmodel.PlayerUiState
 
 @Composable
@@ -59,10 +62,14 @@ fun FullScreenControls(
     onOpenSplitList: () -> Unit,
     onEnterPip: () -> Unit
 ) {
+    val palette = LocalAutoCinePalette.current
+    val topScrim = remember { Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent)) }
+    val bottomScrim = remember { Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D))) }
+
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn(),
-        exit = fadeOut(),
+        enter = fadeIn(animationSpec = tween(150)),
+        exit = fadeOut(animationSpec = tween(180)),
         modifier = Modifier.fillMaxSize()
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
@@ -73,11 +80,7 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color(0xD907090D), Color.Transparent)
-                        )
-                    )
+                    .background(topScrim)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
                 val total = state.allVideos.size
@@ -103,7 +106,7 @@ fun FullScreenControls(
                 Surface(
                     onClick = onEnterPip,
                     shape = RoundedCornerShape(16.dp),
-                    color = Color(0x801E293B),
+                    color = Color(0x991E293B),
                     modifier = Modifier.height(58.dp)
                 ) {
                     Row(
@@ -113,7 +116,7 @@ fun FullScreenControls(
                         Icon(
                             imageVector = Icons.Rounded.PictureInPictureAlt,
                             contentDescription = "Picture-in-Picture",
-                            tint = Color(0xFF38BDF8),
+                            tint = palette.accent,
                             modifier = Modifier.size(26.dp)
                         )
                         Spacer(Modifier.width(8.dp))
@@ -147,14 +150,14 @@ fun FullScreenControls(
                 Surface(
                     onClick = onTogglePlayPause,
                     shape = CircleShape,
-                    color = Color(0xF238BDF8),
+                    color = palette.accent,
                     modifier = Modifier.size(108.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                             contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
-                            tint = Color(0xFF07090D),
+                            tint = palette.onAccent,
                             modifier = Modifier.size(58.dp)
                         )
                     }
@@ -182,11 +185,7 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color(0xEB07090D))
-                        )
-                    )
+                    .background(bottomScrim)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
                 Row(
@@ -194,13 +193,14 @@ fun FullScreenControls(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(formatMs(state.positionMs), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    val maxDuration = state.durationMs.coerceAtLeast(1L).toFloat()
                     Slider(
-                        value = state.positionMs.toFloat(),
+                        value = state.positionMs.toFloat().coerceIn(0f, maxDuration),
                         onValueChange = { onSeek(it.toLong()) },
-                        valueRange = 0f..state.durationMs.coerceAtLeast(1L).toFloat(),
+                        valueRange = 0f..maxDuration,
                         colors = SliderDefaults.colors(
                             thumbColor = Color.White,
-                            activeTrackColor = Color(0xFF38BDF8),
+                            activeTrackColor = palette.accent,
                             inactiveTrackColor = Color(0x4DFFFFFF)
                         ),
                         modifier = Modifier
@@ -222,7 +222,7 @@ fun FullScreenControls(
                         Surface(
                             onClick = onCycleMode,
                             shape = RoundedCornerShape(16.dp),
-                            color = Color(0x8C1E293B),
+                            color = Color(0x991E293B),
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
@@ -234,7 +234,7 @@ fun FullScreenControls(
                                     PlaybackMode.SHUFFLE -> Icons.Rounded.Shuffle
                                     PlaybackMode.REPEAT_ONE -> Icons.Rounded.RepeatOne
                                 }
-                                Icon(icon, contentDescription = "Modo", tint = Color(0xFF38BDF8), modifier = Modifier.size(26.dp))
+                                Icon(icon, contentDescription = "Modo", tint = palette.accent, modifier = Modifier.size(26.dp))
                                 Spacer(Modifier.width(10.dp))
                                 Text(state.playbackMode.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                             }
@@ -243,14 +243,14 @@ fun FullScreenControls(
                         Surface(
                             onClick = onCycleAspect,
                             shape = RoundedCornerShape(16.dp),
-                            color = Color(0x8C1E293B),
+                            color = Color(0x991E293B),
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(horizontal = 18.dp)
                             ) {
-                                Icon(Icons.Rounded.AspectRatio, contentDescription = "Proporção", tint = Color(0xFF38BDF8), modifier = Modifier.size(26.dp))
+                                Icon(Icons.Rounded.AspectRatio, contentDescription = "Proporção", tint = palette.accent, modifier = Modifier.size(26.dp))
                                 Spacer(Modifier.width(10.dp))
                                 Text(state.aspectRatio.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
                             }
@@ -286,7 +286,7 @@ fun FullScreenControls(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.padding(horizontal = 22.dp)
                         ) {
-                            Icon(Icons.Rounded.FolderOpen, contentDescription = "Pastas", tint = Color(0xFF38BDF8), modifier = Modifier.size(28.dp))
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = "Pastas", tint = palette.accent, modifier = Modifier.size(28.dp))
                             Spacer(Modifier.width(10.dp))
                             Text("Pastas / Lista", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                         }

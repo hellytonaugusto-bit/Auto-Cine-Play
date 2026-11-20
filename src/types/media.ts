@@ -38,6 +38,16 @@ export interface MediaFolder {
   videos: VideoItem[];
 }
 
+export type UiScaleLevel = 'small' | 'default' | 'large' | 'extra_large';
+
+export type AppColorTheme =
+  | 'automotive_blue'
+  | 'sport_red'
+  | 'emerald_green'
+  | 'amber_gold'
+  | 'neon_purple'
+  | 'graphite_gray';
+
 export interface PersistedPlayerState {
   selectedSource: StorageSource;
   selectedFolderId: string | null;
@@ -49,6 +59,8 @@ export interface PersistedPlayerState {
   brightness: number;
   reverseMuteHardware: boolean;
   allModeIncludedFolderIds: string[] | null; // null = all folders included by default
+  uiScaleLevel: UiScaleLevel;
+  colorTheme: AppColorTheme;
 }
 
 export interface ActiveGestureHUD {

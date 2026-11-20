@@ -28,15 +28,24 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
+import com.autocine.player.data.StorageSlot
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.PlayerScreen
+import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.AutoCineTheme
+import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.viewmodel.PlayerViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -51,6 +60,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: PlayerViewModel by viewModels()
     private var playbackService: VideoPlaybackService? = null
     private var isBound = false
+    private var pendingPickerSlot: StorageSlot = StorageSlot.USB
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -88,8 +98,14 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
-            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: "Pasta USB"
-            viewModel.onFolderSelected(uri.toString(), name)
+            val fallbackName = when (pendingPickerSlot) {
+                StorageSlot.USB -> "Pen Drive"
+                StorageSlot.SD_CARD -> "Cartão SD"
+                StorageSlot.INTERNAL -> "Memória Interna"
+                StorageSlot.ALL -> "Pasta"
+            }
+            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: fallbackName
+            viewModel.onFolderSelected(uri.toString(), name, pendingPickerSlot)
         }
     }
 
@@ -118,12 +134,26 @@ class MainActivity : ComponentActivity() {
         )
 
         setContent {
-            AutoCineTheme {
+            val appearanceFlow = remember {
+                viewModel.uiState
+                    .map { it.colorTheme to it.uiScaleLevel }
+                    .distinctUntilChanged()
+            }
+            val (colorTheme, uiScaleLevel) by appearanceFlow.collectAsState(
+                initial = AppColorTheme.AUTOMOTIVE_BLUE to UiScaleLevel.DEFAULT
+            )
+            AutoCineTheme(
+                colorTheme = colorTheme,
+                uiScaleLevel = uiScaleLevel
+            ) {
                 PlayerScreen(
                     viewModel = viewModel,
                     getEngine = { playbackService?.engine },
                     onEnterPip = { enterPipNow() },
-                    onPickFolder = { openFolderLauncher.launch(null) },
+                    onPickFolderForSlot = { slot ->
+                        pendingPickerSlot = slot
+                        openFolderLauncher.launch(null)
+                    },
                     onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
                     onGetBrightness = { getWindowBrightness() },
                     onAdjustVolume = { fraction -> setMediaVolume(fraction) },
@@ -251,27 +281,47 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun setWindowBrightness(fraction: Float) {
+        val clamped = fraction.coerceIn(0.05f, 1.0f)
         val params = window.attributes
-        params.screenBrightness = fraction.coerceIn(0.05f, 1.0f)
+        params.screenBrightness = clamped
         window.attributes = params
     }
 
     private fun getWindowBrightness(): Float {
         val current = window.attributes.screenBrightness
-        return if (current in 0f..1f) current else 0.75f
+        if (current in 0.05f..1.0f) return current
+        val sysBrightness = runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.75f)
+        return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
     private fun setMediaVolume(fraction: Float) {
         val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val target = (fraction.coerceIn(0f, 1f) * max).toInt()
-        am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            am.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+        } else {
+            0
+        }
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
+        val target = (minVol + fraction.coerceIn(0f, 1f) * (maxVol - minVol))
+            .roundToInt()
+            .coerceIn(minVol, maxVol)
+        if (am.getStreamVolume(AudioManager.STREAM_MUSIC) != target) {
+            am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+        }
     }
 
     private fun getMediaVolume(): Float {
         val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        return am.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / max.toFloat()
+        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            am.getStreamMinVolume(AudioManager.STREAM_MUSIC)
+        } else {
+            0
+        }
+        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
+        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+        return (current - minVol).toFloat() / (maxVol - minVol).toFloat()
     }
 
     private fun requestModernPermissions() {

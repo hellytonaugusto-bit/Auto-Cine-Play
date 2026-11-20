@@ -60,10 +60,29 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(manifest, /android:icon="@mipmap\/ic_launcher"/);
   assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
 
-  // Requirement: Gesture overlay with seek, brightness, volume
+  // Requirement: Gesture overlay with seek, brightness, volume & non-freezing pointerInput(Unit)
   const gestureKt = byPath.get('app/src/main/java/com/autocine/player/ui/GestureOverlay.kt');
   assert.ok(gestureKt, 'GestureOverlay.kt must exist');
   assert.match(gestureKt, /GestureAxis\.SEEK/);
   assert.match(gestureKt, /GestureAxis\.BRIGHTNESS/);
   assert.match(gestureKt, /GestureAxis\.VOLUME/);
+  assert.match(gestureKt, /pointerInput\(Unit\)/);
+  assert.match(gestureKt, /rememberUpdatedState/);
+
+  // Requirement: 4 fixed UI scales + 6 color themes in Theme.kt
+  const themeKt = byPath.get('app/src/main/java/com/autocine/player/ui/theme/Theme.kt');
+  assert.ok(themeKt, 'Theme.kt must exist');
+  assert.match(themeKt, /enum class UiScaleLevel/);
+  assert.match(themeKt, /0\.85f/);
+  assert.match(themeKt, /1\.30f/);
+  assert.match(themeKt, /enum class AppColorTheme/);
+  assert.match(themeKt, /LocalDensity provides/);
+
+  // Requirement: Clean scrollable left pane, SettingsDialog, and LruCache thumbnails in SplitScreenBrowser.kt
+  const splitKt = byPath.get('app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt');
+  assert.ok(splitKt, 'SplitScreenBrowser.kt must exist');
+  assert.match(splitKt, /verticalScroll/);
+  assert.match(splitKt, /fun SettingsDialog/);
+  assert.match(splitKt, /LruCache/);
+  assert.match(splitKt, /Dispatchers\.IO/);
 });

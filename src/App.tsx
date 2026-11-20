@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AppColorTheme,
   AspectRatioMode,
   MediaFolder,
   PersistedPlayerState,
   PlaybackMode,
   SortOption,
   StorageSource,
+  UiScaleLevel,
   VideoItem,
   ViewMode,
 } from './types/media';
@@ -24,10 +26,12 @@ import {
   goBackShuffleTrack,
   sortMediaFiles,
 } from './utils/mediaLogic';
+import { getColorThemePreset, getUiScalePreset } from './utils/themeConfig';
 import { VideoStage } from './components/VideoStage';
 import { FullScreenControls } from './components/FullScreenControls';
 import { SplitScreenView } from './components/SplitScreenView';
 import { PipModeView } from './components/PipModeView';
+import { SettingsModal } from './components/SettingsModal';
 
 const STORAGE_KEY = 'autocine_headunit_state_v1';
 
@@ -43,6 +47,8 @@ function loadPersistedState(): PersistedPlayerState {
     brightness: 95,
     reverseMuteHardware: true,
     allModeIncludedFolderIds: null,
+    uiScaleLevel: 'default',
+    colorTheme: 'automotive_blue',
   };
 
   try {
@@ -66,6 +72,8 @@ function loadPersistedState(): PersistedPlayerState {
       allModeIncludedFolderIds: Array.isArray(parsed.allModeIncludedFolderIds)
         ? parsed.allModeIncludedFolderIds
         : null,
+      uiScaleLevel: parsed.uiScaleLevel ?? defaults.uiScaleLevel,
+      colorTheme: parsed.colorTheme ?? defaults.colorTheme,
     };
   } catch {
     return defaults;
@@ -100,6 +108,9 @@ export default function App() {
   const [volume, setVolume] = useState<number>(initialPrefs.volume);
   const [brightness, setBrightness] = useState<number>(initialPrefs.brightness);
   const [reverseMuteHardware] = useState<boolean>(initialPrefs.reverseMuteHardware);
+  const [uiScaleLevel, setUiScaleLevel] = useState<UiScaleLevel>(initialPrefs.uiScaleLevel);
+  const [colorTheme, setColorTheme] = useState<AppColorTheme>(initialPrefs.colorTheme);
+  const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
   const [viewMode, setViewMode] = useState<ViewMode>('fullscreen');
   const [controlsVisible, setControlsVisible] = useState<boolean>(true);
@@ -109,6 +120,21 @@ export default function App() {
   const hideTimerRef = useRef<number | null>(null);
   const toastTimerRef = useRef<number | null>(null);
   const shuffleHistoryRef = useRef<string[]>([]);
+
+  const activeScalePreset = useMemo(() => getUiScalePreset(uiScaleLevel), [uiScaleLevel]);
+  const activeColorPreset = useMemo(() => getColorThemePreset(colorTheme), [colorTheme]);
+
+  // Apply dynamic theme CSS variables on :root so all views and modals update instantly
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty('--ac-accent', activeColorPreset.accent);
+    root.style.setProperty('--ac-accent-hover', activeColorPreset.accentHover);
+    root.style.setProperty('--ac-accent-dark', activeColorPreset.accentDark);
+    root.style.setProperty('--ac-accent-soft', activeColorPreset.accentSoft);
+    root.style.setProperty('--ac-accent-border', activeColorPreset.accentBorder);
+    root.style.setProperty('--ac-accent-text', activeColorPreset.accentText);
+    root.style.setProperty('--ac-on-accent', activeColorPreset.onAccent);
+  }, [activeColorPreset]);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -170,7 +196,7 @@ export default function App() {
 
   const duration = currentVideo?.durationSec ?? 0;
 
-  // Persist folder, manual All-Folders filter, playback mode, aspect ratio, sort, volume, brightness
+  // Persist folder, manual All-Folders filter, playback mode, aspect ratio, sort, volume, brightness, UI scale & theme
   useEffect(() => {
     const payload: PersistedPlayerState = {
       selectedSource,
@@ -183,6 +209,8 @@ export default function App() {
       brightness,
       reverseMuteHardware,
       allModeIncludedFolderIds,
+      uiScaleLevel,
+      colorTheme,
     };
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -200,6 +228,8 @@ export default function App() {
     brightness,
     reverseMuteHardware,
     allModeIncludedFolderIds,
+    uiScaleLevel,
+    colorTheme,
   ]);
 
   // Auto-hide fullscreen controls after 4.5s of inactivity
@@ -543,101 +573,117 @@ export default function App() {
       data-testid="autocine-app"
       data-view-mode={viewMode}
       data-playing={isPlaying ? 'true' : 'false'}
+      data-ui-scale={uiScaleLevel}
+      data-color-theme={colorTheme}
       className="relative w-screen h-screen bg-[#07090D] overflow-hidden select-none"
     >
-      {/* MODE 1: FULLSCREEN IMMERSIVE PLAYER */}
-      {viewMode === 'fullscreen' && (
-        <div className="relative w-full h-full">
-          {sharedVideoStage(false, true)}
+      <div
+        className="w-full h-full"
+        style={{ zoom: activeScalePreset.scaleFactor }}
+      >
+        {/* MODE 1: FULLSCREEN IMMERSIVE PLAYER */}
+        {viewMode === 'fullscreen' && (
+          <div className="relative w-full h-full">
+            {sharedVideoStage(false, true)}
 
-          <FullScreenControls
-            visible={controlsVisible}
-            video={currentVideo}
-            currentIndex={currentIndexInQueue}
-            totalVideos={sortedPlayingVideos.length}
-            isAllFoldersMode={playingFolderId === ALL_FOLDERS_ID}
+            <FullScreenControls
+              visible={controlsVisible}
+              video={currentVideo}
+              currentIndex={currentIndexInQueue}
+              totalVideos={sortedPlayingVideos.length}
+              isAllFoldersMode={playingFolderId === ALL_FOLDERS_ID}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              playbackMode={playbackMode}
+              aspectRatio={aspectRatio}
+              volume={volume}
+              brightness={brightness}
+              onTogglePlayPause={handleTogglePlayPause}
+              onPrevious={handlePrevious}
+              onNext={handleNext}
+              onSeek={handleSeek}
+              onCyclePlaybackMode={handleCyclePlaybackMode}
+              onCycleAspectRatio={handleCycleAspectRatio}
+              onOpenSplitList={() => setViewMode('split')}
+              onEnterPip={() => setViewMode('pip')}
+              onResetHideTimer={resetHideTimer}
+            />
+          </div>
+        )}
+
+        {/* MODE 2: SPLIT-SCREEN MINI-PLAYER + HIERARCHICAL FOLDER EXPLORER */}
+        {viewMode === 'split' && (
+          <SplitScreenView
+            folders={folders}
+            selectedSource={selectedSource}
+            browsedFolder={browsedFolder}
+            allModeIncludedFolderIds={allModeIncludedFolderIds}
+            totalAllFoldersVideos={allFoldersCombined.videos.length}
+            visibleVideos={visibleVideos}
+            currentVideo={currentVideo}
+            totalVideosInBrowsedFolder={sortedBrowsedVideos.length}
             isPlaying={isPlaying}
-            currentTime={currentTime}
-            duration={duration}
-            playbackMode={playbackMode}
-            aspectRatio={aspectRatio}
-            volume={volume}
-            brightness={brightness}
+            sortOption={sortOption}
+            searchQuery={searchQuery}
+            isRefreshing={isRefreshing}
+            miniPlayerNode={sharedVideoStage(true, false)}
+            onSelectSource={handleSelectSource}
+            onOpenFolder={handleOpenFolder}
+            onNavigateUp={handleNavigateUp}
+            onApplyAllModeFilter={handleApplyAllModeFilter}
+            onSelectVideo={handleSelectVideo}
+            onReturnFullscreen={() => {
+              setViewMode('fullscreen');
+              setControlsVisible(true);
+            }}
             onTogglePlayPause={handleTogglePlayPause}
             onPrevious={handlePrevious}
             onNext={handleNext}
-            onSeek={handleSeek}
-            onCyclePlaybackMode={handleCyclePlaybackMode}
-            onCycleAspectRatio={handleCycleAspectRatio}
-            onOpenSplitList={() => setViewMode('split')}
             onEnterPip={() => setViewMode('pip')}
-            onResetHideTimer={resetHideTimer}
+            onSearchChange={setSearchQuery}
+            onRefreshFolder={handleRefreshFolder}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onCycleSort={handleCycleSort}
+            onDeleteVideo={handleDeleteVideo}
           />
-        </div>
-      )}
+        )}
 
-      {/* MODE 2: SPLIT-SCREEN MINI-PLAYER + HIERARCHICAL FOLDER EXPLORER */}
-      {viewMode === 'split' && (
-        <SplitScreenView
-          folders={folders}
-          selectedSource={selectedSource}
-          browsedFolder={browsedFolder}
-          allModeIncludedFolderIds={allModeIncludedFolderIds}
-          totalAllFoldersVideos={allFoldersCombined.videos.length}
-          visibleVideos={visibleVideos}
-          currentVideo={currentVideo}
-          currentIndexInQueue={currentIndexInQueue}
-          totalVideosInQueue={sortedPlayingVideos.length}
-          totalVideosInBrowsedFolder={sortedBrowsedVideos.length}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          duration={duration}
-          playbackMode={playbackMode}
-          aspectRatio={aspectRatio}
-          sortOption={sortOption}
-          searchQuery={searchQuery}
-          isRefreshing={isRefreshing}
-          miniPlayerNode={sharedVideoStage(true, false)}
-          onSelectSource={handleSelectSource}
-          onOpenFolder={handleOpenFolder}
-          onNavigateUp={handleNavigateUp}
-          onApplyAllModeFilter={handleApplyAllModeFilter}
-          onSelectVideo={handleSelectVideo}
-          onReturnFullscreen={() => {
-            setViewMode('fullscreen');
-            setControlsVisible(true);
-          }}
-          onTogglePlayPause={handleTogglePlayPause}
-          onPrevious={handlePrevious}
-          onNext={handleNext}
-          onSeek={handleSeek}
-          onCyclePlaybackMode={handleCyclePlaybackMode}
-          onCycleAspectRatio={handleCycleAspectRatio}
-          onEnterPip={() => setViewMode('pip')}
-          onSearchChange={setSearchQuery}
-          onRefreshFolder={handleRefreshFolder}
-          onCycleSort={handleCycleSort}
-          onDeleteVideo={handleDeleteVideo}
-        />
-      )}
+        {/* MODE 3: PICTURE-IN-PICTURE (PiP) OVER NAVIGATION */}
+        {viewMode === 'pip' && (
+          <PipModeView
+            video={currentVideo}
+            isPlaying={isPlaying}
+            currentTime={currentTime}
+            duration={duration}
+            pipVideoNode={sharedVideoStage(true, false)}
+            onTogglePlayPause={handleTogglePlayPause}
+            onPrevious={handlePrevious}
+            onNext={handleNext}
+            onExpandFullscreen={() => {
+              setViewMode('fullscreen');
+              setControlsVisible(true);
+            }}
+          />
+        )}
 
-      {/* MODE 3: PICTURE-IN-PICTURE (PiP) OVER NAVIGATION */}
-      {viewMode === 'pip' && (
-        <PipModeView
-          video={currentVideo}
-          isPlaying={isPlaying}
-          currentTime={currentTime}
-          duration={duration}
-          pipVideoNode={sharedVideoStage(true, false)}
-          onTogglePlayPause={handleTogglePlayPause}
-          onPrevious={handlePrevious}
-          onNext={handleNext}
-          onExpandFullscreen={() => {
-            setViewMode('fullscreen');
-            setControlsVisible(true);
-          }}
-        />
-      )}
+        {/* SETTINGS MODAL (UI Scale + Color Theme) */}
+        {settingsOpen && (
+          <SettingsModal
+            uiScaleLevel={uiScaleLevel}
+            colorTheme={colorTheme}
+            onSelectUiScale={(scale) => {
+              setUiScaleLevel(scale);
+              showToast(`Tamanho da interface: ${getUiScalePreset(scale).label}`);
+            }}
+            onSelectColorTheme={(theme) => {
+              setColorTheme(theme);
+              showToast(`Tema: ${getColorThemePreset(theme).label}`);
+            }}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
+      </div>
 
       {/* CLEAN AUTOMOTIVE FEEDBACK TOAST */}
       {toastMessage && (

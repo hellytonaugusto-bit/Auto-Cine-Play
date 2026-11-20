@@ -6,16 +6,13 @@ import {
   Folder,
   HardDrive,
   Layers,
-  Maximize2,
   MemoryStick,
   Pause,
   PictureInPicture2,
   Play,
   RefreshCw,
-  Repeat,
-  Repeat1,
   Search,
-  Shuffle,
+  Settings,
   SkipBack,
   SkipForward,
   SlidersHorizontal,
@@ -24,22 +21,17 @@ import {
   X,
 } from 'lucide-react';
 import type {
-  AspectRatioMode,
   MediaFolder,
-  PlaybackMode,
   SortOption,
   StorageSource,
   VideoItem,
 } from '../types/media';
 import {
-  ASPECT_RATIO_LABELS,
-  PLAYBACK_MODE_LABELS,
   SORT_OPTION_LABELS,
   STORAGE_SOURCE_LABELS,
   countVideosRecursive,
   formatDateShort,
   formatTime,
-  formatTrackIndex,
   getChildFolders,
   getFolderBreadcrumbs,
   normalizeForSearch,
@@ -54,14 +46,8 @@ interface SplitScreenViewProps {
   totalAllFoldersVideos: number;
   visibleVideos: VideoItem[];
   currentVideo: VideoItem | null;
-  currentIndexInQueue: number;
-  totalVideosInQueue: number;
   totalVideosInBrowsedFolder: number;
   isPlaying: boolean;
-  currentTime: number;
-  duration: number;
-  playbackMode: PlaybackMode;
-  aspectRatio: AspectRatioMode;
   sortOption: SortOption;
   searchQuery: string;
   isRefreshing: boolean;
@@ -75,27 +61,25 @@ interface SplitScreenViewProps {
   onTogglePlayPause: () => void;
   onPrevious: () => void;
   onNext: () => void;
-  onSeek: (timeSec: number) => void;
-  onCyclePlaybackMode: () => void;
-  onCycleAspectRatio: () => void;
   onEnterPip: () => void;
   onSearchChange: (q: string) => void;
   onRefreshFolder: () => void;
+  onOpenSettings: () => void;
   onCycleSort: () => void;
   onDeleteVideo: (videoId: string) => void;
 }
 
 const SOURCE_TABS: { id: StorageSource; label: string; shortLabel: string; icon: React.ReactNode }[] = [
-  { id: 'usb_otg', label: 'Pen Drive (USB)', shortLabel: 'Pen Drive', icon: <Usb className="w-5 h-5" /> },
-  { id: 'sd_card', label: 'Cartão SD', shortLabel: 'Cartão SD', icon: <MemoryStick className="w-5 h-5" /> },
-  { id: 'internal', label: 'Memória Interna', shortLabel: 'Interna', icon: <HardDrive className="w-5 h-5" /> },
+  { id: 'usb_otg', label: 'Pen Drive (USB)', shortLabel: 'Pen Drive', icon: <Usb className="w-5 h-5 shrink-0" /> },
+  { id: 'sd_card', label: 'Cartão SD', shortLabel: 'Cartão SD', icon: <MemoryStick className="w-5 h-5 shrink-0" /> },
+  { id: 'internal', label: 'Memória Interna', shortLabel: 'Interna', icon: <HardDrive className="w-5 h-5 shrink-0" /> },
 ];
 
 const VideoRowThumbnail: React.FC<{
   item: VideoItem;
   isActive: boolean;
   isPlaying: boolean;
-}> = ({ item, isActive, isPlaying }) => {
+}> = React.memo(({ item, isActive, isPlaying }) => {
   const [thumbSrc, setThumbSrc] = useState<string>(item.posterUrl);
 
   useEffect(() => {
@@ -149,9 +133,10 @@ const VideoRowThumbnail: React.FC<{
   return (
     <div
       data-testid="video-row-thumbnail"
-      className={`relative w-24 h-14 sm:w-28 sm:h-16 rounded-xl overflow-hidden bg-black shrink-0 border transition ${
-        isActive ? 'border-sky-400 shadow-md shadow-sky-500/25' : 'border-white/12'
-      }`}
+      className="relative w-24 h-14 sm:w-28 sm:h-16 rounded-xl overflow-hidden bg-black shrink-0 border transition"
+      style={{
+        borderColor: isActive ? 'var(--ac-accent)' : 'rgba(255,255,255,0.12)',
+      }}
     >
       <img
         src={thumbSrc}
@@ -172,7 +157,13 @@ const VideoRowThumbnail: React.FC<{
       {/* Active playback indicator overlay */}
       {isActive && (
         <div className="absolute inset-0 bg-black/35 flex items-center justify-center pointer-events-none">
-          <div className="w-8 h-8 rounded-full bg-sky-400/95 text-[#07090D] flex items-center justify-center shadow-lg">
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center shadow-lg"
+            style={{
+              backgroundColor: 'var(--ac-accent)',
+              color: 'var(--ac-on-accent)',
+            }}
+          >
             {isPlaying ? (
               <Pause className="w-4 h-4 fill-current" />
             ) : (
@@ -183,7 +174,9 @@ const VideoRowThumbnail: React.FC<{
       )}
     </div>
   );
-};
+});
+
+VideoRowThumbnail.displayName = 'VideoRowThumbnail';
 
 export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
   folders,
@@ -193,14 +186,8 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
   totalAllFoldersVideos,
   visibleVideos,
   currentVideo,
-  currentIndexInQueue,
-  totalVideosInQueue,
   totalVideosInBrowsedFolder,
   isPlaying,
-  currentTime,
-  duration,
-  playbackMode,
-  aspectRatio,
   sortOption,
   searchQuery,
   isRefreshing,
@@ -214,12 +201,10 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
   onTogglePlayPause,
   onPrevious,
   onNext,
-  onSeek,
-  onCyclePlaybackMode,
-  onCycleAspectRatio,
   onEnterPip,
   onSearchChange,
   onRefreshFolder,
+  onOpenSettings,
   onCycleSort,
   onDeleteVideo,
 }) => {
@@ -229,7 +214,6 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbNavRef = useRef<HTMLElement | null>(null);
 
-  // Immediate child subfolders inside the currently browsed folder (or drive root)
   const childSubfolders = useMemo(() => {
     if (selectedSource === 'all') return [];
     const parentId = browsedFolder ? browsedFolder.id : null;
@@ -239,20 +223,17 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
     return raw.filter((f) => normalizeForSearch(f.name).includes(q));
   }, [browsedFolder, folders, searchQuery, selectedSource]);
 
-  // Ancestor breadcrumbs for the currently browsed folder
   const breadcrumbs = useMemo(() => {
     if (selectedSource === 'all' || !browsedFolder) return [];
     return getFolderBreadcrumbs(folders, browsedFolder.id);
   }, [browsedFolder, folders, selectedSource]);
 
-  // Keep deepest active folder visible in horizontal breadcrumb bar
   useEffect(() => {
     if (breadcrumbNavRef.current) {
       breadcrumbNavRef.current.scrollLeft = breadcrumbNavRef.current.scrollWidth;
     }
   }, [breadcrumbs.length, browsedFolder?.id, selectedSource]);
 
-  // Show subfolders at top when entering a folder with subfolders; otherwise center active video
   useEffect(() => {
     if (childSubfolders.length > 0 && listContainerRef.current) {
       listContainerRef.current.scrollTop = 0;
@@ -260,8 +241,6 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
       activeRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
   }, [currentVideo?.id, browsedFolder?.id, childSubfolders.length]);
-
-  const progressPercent = duration > 0 ? Math.min((currentTime / duration) * 100, 100) : 0;
 
   const isAllMode = selectedSource === 'all';
   const currentDriveLabel =
@@ -287,185 +266,156 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
       data-testid="split-screen-view"
       className="w-full h-full bg-[#07090D] text-slate-100 flex flex-row overflow-hidden"
     >
-      {/* LEFT COLUMN (43%): Original sleek Turn-1 Mini-Player & controls, scaled UP for 9" touch */}
-      <aside className="w-[43%] min-w-[380px] max-w-[580px] h-full border-r border-white/8 bg-[#0B0F17] p-3 xl:p-4 flex flex-col justify-between gap-2.5 xl:gap-3.5 overflow-y-auto auto-scroll">
-        <div className="flex flex-col gap-2.5 xl:gap-3">
-          {/* Continuous Mini-Player Frame — Tap video to return immediately to Fullscreen */}
-          <div className="relative w-full aspect-video max-h-[168px] xl:max-h-none rounded-2xl overflow-hidden bg-black border border-white/12 shadow-xl">
-            {miniPlayerNode}
-            <button
-              type="button"
-              onClick={onReturnFullscreen}
-              aria-label="Expandir vídeo para tela cheia"
-              className="absolute inset-0 z-20 flex flex-col justify-end bg-gradient-to-t from-black/80 via-transparent to-transparent p-3 xl:p-4 text-left cursor-pointer"
-            >
-              <span className="inline-flex items-center gap-2 text-xs xl:text-sm font-medium text-white">
-                <Maximize2 className="w-4 h-4 text-sky-400" />
-                <span>Toque no vídeo para voltar à tela cheia</span>
-              </span>
-            </button>
-          </div>
+      {/* LEFT COLUMN (42%): Clean Mini-Player + Transport Controls + Scrollable Armazenamento */}
+      <aside
+        data-testid="split-left-pane"
+        className="w-[42%] min-w-[340px] max-w-[540px] h-full border-r border-white/8 bg-[#0B0F17] p-3.5 flex flex-col gap-3 overflow-hidden"
+      >
+        {/* 1. Continuous Mini-Player Frame — Tap video directly to expand to Fullscreen */}
+        <div className="relative w-full aspect-video rounded-2xl overflow-hidden bg-black border border-white/14 shadow-xl shrink-0">
+          {miniPlayerNode}
+          <button
+            type="button"
+            data-testid="mini-player-expand-btn"
+            onClick={onReturnFullscreen}
+            aria-label="Expandir vídeo para tela cheia"
+            className="absolute inset-0 z-20 cursor-pointer bg-transparent"
+          />
+        </div>
 
-          {/* Active Track Title + Thick 9" Scrubber */}
-          <div className="px-0.5">
-            <h2 className="font-display text-base xl:text-lg font-semibold text-white truncate">
-              {currentVideo
-                ? `${formatTrackIndex(currentIndexInQueue, totalVideosInQueue)} - ${currentVideo.name}`
-                : 'Nenhum vídeo em reprodução'}
-            </h2>
-            {currentVideo && (
-              <p className="text-xs xl:text-sm text-slate-400 mt-0.5 tabular-nums truncate">
-                {currentVideo.resolution} · {currentVideo.videoCodec} · {currentVideo.audioCodec} · libVLC {currentVideo.decoder}
-              </p>
-            )}
-            <div className="mt-2 xl:mt-3 flex items-center gap-3">
-              <span className="font-mono-code text-xs xl:text-sm text-slate-200 tabular-nums w-11">
-                {formatTime(currentTime)}
-              </span>
-              <input
-                type="range"
-                aria-label="Progresso do mini-player"
-                min={0}
-                max={Math.max(duration, 1)}
-                step={1}
-                value={Math.min(currentTime, Math.max(duration, 1))}
-                onChange={(e) => onSeek(Number(e.target.value))}
-                className="auto-scrubber flex-1"
-                style={{
-                  background: `linear-gradient(to right, #38bdf8 ${progressPercent}%, rgba(255,255,255,0.22) ${progressPercent}%)`,
-                  height: '10px',
-                  borderRadius: '9999px',
-                }}
-              />
-              <span className="font-mono-code text-xs xl:text-sm text-slate-400 tabular-nums w-11 text-right">
-                {formatTime(duration)}
-              </span>
-            </div>
-          </div>
-
-          {/* Oversized 9" Transport Buttons (56px on 600p, 64px on larger screens) */}
-          <div className="flex items-center justify-between gap-2 xl:gap-2.5 pt-0.5">
+        {/* 2. Scrollable Controls & Storage Container (ensures nothing is ever clipped on 600p/scaled screens) */}
+        <div
+          data-testid="left-pane-scroll"
+          className="flex-1 min-h-0 overflow-y-auto auto-scroll flex flex-col gap-3.5 pr-0.5"
+        >
+          {/* Main Transport Controls: Anterior, Play/Pause, Próximo, PiP */}
+          <div className="flex items-center justify-between gap-2 pt-0.5 shrink-0">
             <button
               type="button"
               onClick={onPrevious}
               aria-label="Vídeo anterior"
-              className="flex-1 min-h-[56px] xl:min-h-[64px] rounded-2xl bg-white/8 hover:bg-white/15 active:scale-95 text-white flex items-center justify-center transition cursor-pointer"
+              className="flex-1 min-h-[56px] rounded-2xl bg-[#162033] hover:bg-[#1E2C45] border border-white/10 active:scale-95 text-white flex items-center justify-center transition cursor-pointer"
             >
-              <SkipBack className="w-7 h-7 xl:w-8 xl:h-8 fill-current" />
+              <SkipBack className="w-7 h-7 fill-current" />
             </button>
             <button
               type="button"
               onClick={onTogglePlayPause}
               aria-label={isPlaying ? 'Pausar vídeo' : 'Reproduzir vídeo'}
-              className="flex-[1.35] min-h-[56px] xl:min-h-[64px] rounded-2xl bg-sky-400 hover:bg-sky-300 active:scale-95 text-[#07090D] flex items-center justify-center shadow-lg shadow-sky-500/20 transition cursor-pointer"
+              className="flex-[1.35] min-h-[56px] rounded-2xl active:scale-95 flex items-center justify-center shadow-lg transition cursor-pointer"
+              style={{
+                backgroundColor: 'var(--ac-accent)',
+                color: 'var(--ac-on-accent)',
+              }}
             >
-              {isPlaying ? <Pause className="w-7 h-7 xl:w-8 xl:h-8 fill-current" /> : <Play className="w-7 h-7 xl:w-8 xl:h-8 fill-current ml-0.5" />}
+              {isPlaying ? (
+                <Pause className="w-7 h-7 fill-current" />
+              ) : (
+                <Play className="w-7 h-7 fill-current ml-0.5" />
+              )}
             </button>
             <button
               type="button"
               onClick={onNext}
               aria-label="Próximo vídeo"
-              className="flex-1 min-h-[56px] xl:min-h-[64px] rounded-2xl bg-white/8 hover:bg-white/15 active:scale-95 text-white flex items-center justify-center transition cursor-pointer"
+              className="flex-1 min-h-[56px] rounded-2xl bg-[#162033] hover:bg-[#1E2C45] border border-white/10 active:scale-95 text-white flex items-center justify-center transition cursor-pointer"
             >
-              <SkipForward className="w-7 h-7 xl:w-8 xl:h-8 fill-current" />
+              <SkipForward className="w-7 h-7 fill-current" />
             </button>
             <button
               type="button"
               onClick={onEnterPip}
               aria-label="Ativar Picture-in-Picture"
-              className="min-w-[56px] min-h-[56px] xl:min-w-[64px] xl:min-h-[64px] rounded-2xl bg-white/8 hover:bg-white/15 active:scale-95 text-sky-400 flex items-center justify-center transition cursor-pointer"
+              className="min-w-[56px] min-h-[56px] rounded-2xl bg-[#162033] hover:bg-[#1E2C45] border border-white/10 active:scale-95 flex items-center justify-center transition cursor-pointer"
+              style={{ color: 'var(--ac-accent)' }}
             >
-              <PictureInPicture2 className="w-6 h-6 xl:w-7 xl:h-7" />
+              <PictureInPicture2 className="w-6 h-6" />
             </button>
           </div>
 
-          {/* Oversized Mode + Aspect Row */}
-          <div className="grid grid-cols-2 gap-2 xl:gap-2.5">
-            <button
-              type="button"
-              onClick={onCyclePlaybackMode}
-              className="min-h-[46px] xl:min-h-[54px] px-3 xl:px-4 rounded-xl bg-white/6 hover:bg-white/12 text-sm font-medium text-slate-100 flex items-center justify-center gap-2 transition whitespace-nowrap cursor-pointer"
-            >
-              {playbackMode === 'sequential' && <Repeat className="w-5 h-5 text-sky-400" />}
-              {playbackMode === 'shuffle' && <Shuffle className="w-5 h-5 text-sky-400" />}
-              {playbackMode === 'repeat-one' && <Repeat1 className="w-5 h-5 text-sky-400" />}
-              <span>{PLAYBACK_MODE_LABELS[playbackMode]}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onCycleAspectRatio}
-              className="min-h-[46px] xl:min-h-[54px] px-3 xl:px-4 rounded-xl bg-white/6 hover:bg-white/12 text-sm font-medium text-slate-100 flex items-center justify-center gap-2 transition whitespace-nowrap cursor-pointer"
-            >
-              <Maximize2 className="w-5 h-5 text-sky-400" />
-              <span>{ASPECT_RATIO_LABELS[aspectRatio]}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Storage Volumes (Todas as Pastas + USB OTG / SD Card / Internal + Real Local Files) */}
-        <div className="pt-2.5 xl:pt-3 border-t border-white/8 flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs md:text-sm font-medium text-slate-400">
+          {/* Storage Section: Armazenamento (Todas, Pen Drive, Cartão SD, Interna) with high contrast */}
+          <div className="pt-2.5 border-t border-white/10 flex flex-col gap-2.5 shrink-0">
+            <span className="text-xs md:text-sm font-semibold text-slate-300 tracking-wide">
               Armazenamento
             </span>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {/* Split Control: Todas (N) + 1-tap Filter icon */}
-            <div
-              className={`min-h-[48px] xl:min-h-[58px] rounded-xl flex items-stretch overflow-hidden transition ${
-                selectedSource === 'all'
-                  ? 'bg-sky-500/22 border-2 border-sky-400/70'
-                  : 'bg-white/6 border border-transparent'
-              }`}
-            >
-              <button
-                type="button"
-                data-testid="all-folders-btn"
-                onClick={() => onSelectSource('all')}
-                className="flex-1 min-w-0 px-2.5 text-sm font-semibold text-sky-100 hover:bg-white/8 flex items-center justify-center gap-1.5 transition cursor-pointer"
+            <div className="grid grid-cols-2 gap-2.5">
+              {/* Split Control: Todas + 1-tap Filter icon */}
+              <div
+                className="min-h-[54px] rounded-xl flex items-stretch overflow-hidden transition"
+                style={
+                  selectedSource === 'all'
+                    ? {
+                        backgroundColor: 'var(--ac-accent-soft)',
+                        border: '2px solid var(--ac-accent)',
+                      }
+                    : {
+                        backgroundColor: '#162033',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                      }
+                }
               >
-                <Layers className="w-4 h-4 xl:w-5 xl:h-5 text-sky-400 shrink-0" />
-                <span className="truncate">Todas ({totalAllFoldersVideos})</span>
-              </button>
-              <button
-                type="button"
-                data-testid="open-all-filter-btn"
-                onClick={() => setFilterModalOpen(true)}
-                aria-label="Selecionar pastas incluídas em Todas"
-                title="Escolher quais pastas entram em Todas"
-                className={`w-11 xl:w-12 border-l border-white/10 hover:bg-white/12 flex items-center justify-center transition cursor-pointer shrink-0 ${
-                  hasCustomAllFilter ? 'text-sky-300' : 'text-slate-300'
-                }`}
-              >
-                <SlidersHorizontal className="w-4 h-4 xl:w-5 xl:h-5" />
-              </button>
-            </div>
-
-            {SOURCE_TABS.map((tab) => {
-              const active = selectedSource === tab.id;
-              return (
                 <button
-                  key={tab.id}
                   type="button"
-                  data-testid={`source-tab-${tab.id}`}
-                  onClick={() => onSelectSource(tab.id)}
-                  className={`min-h-[48px] xl:min-h-[58px] px-3 rounded-xl text-sm font-medium flex items-center justify-center gap-2 transition cursor-pointer ${
-                    active
-                      ? 'bg-sky-500/20 text-sky-100 border-2 border-sky-400/60'
-                      : 'bg-white/6 text-slate-300 hover:bg-white/12 border border-transparent'
-                  }`}
+                  data-testid="all-folders-btn"
+                  onClick={() => onSelectSource('all')}
+                  className="flex-1 min-w-0 px-2.5 text-sm font-semibold text-white hover:bg-white/10 flex items-center justify-center gap-1.5 transition cursor-pointer"
                 >
-                  {tab.icon}
-                  <span className="truncate max-w-full">{tab.shortLabel}</span>
+                  <Layers
+                    className="w-4 h-4 shrink-0"
+                    style={{ color: 'var(--ac-accent)' }}
+                  />
+                  <span className="truncate">
+                    Todas{totalAllFoldersVideos > 0 ? ` (${totalAllFoldersVideos})` : ''}
+                  </span>
                 </button>
-              );
-            })}
+                <button
+                  type="button"
+                  data-testid="open-all-filter-btn"
+                  onClick={() => setFilterModalOpen(true)}
+                  aria-label="Selecionar pastas incluídas em Todas"
+                  title="Escolher quais pastas entram em Todas"
+                  className="w-11 border-l border-white/15 hover:bg-white/12 flex items-center justify-center transition cursor-pointer shrink-0"
+                  style={{
+                    color: hasCustomAllFilter ? 'var(--ac-accent)' : '#FFFFFF',
+                  }}
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </button>
+              </div>
+
+              {SOURCE_TABS.map((tab) => {
+                const active = selectedSource === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    data-testid={`source-tab-${tab.id}`}
+                    onClick={() => onSelectSource(tab.id)}
+                    className="min-h-[54px] px-3 rounded-xl text-sm font-semibold text-white hover:brightness-110 flex items-center justify-center gap-2 transition cursor-pointer"
+                    style={
+                      active
+                        ? {
+                            backgroundColor: 'var(--ac-accent-soft)',
+                            border: '2px solid var(--ac-accent)',
+                          }
+                        : {
+                            backgroundColor: '#162033',
+                            border: '1px solid rgba(255,255,255,0.14)',
+                          }
+                    }
+                  >
+                    <span style={{ color: 'var(--ac-accent)' }}>{tab.icon}</span>
+                    <span className="truncate max-w-full">{tab.shortLabel}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </aside>
 
-      {/* RIGHT COLUMN (57%): Hierarchical Folder Explorer + 16:9 Video Thumbnail List */}
+      {/* RIGHT COLUMN (58%): Hierarchical Folder Explorer + 16:9 Video Thumbnail List */}
       <main className="flex-1 h-full flex flex-col min-w-0 bg-[#07090D]">
         <div className="px-5 pt-4 pb-3 border-b border-white/8 flex flex-col gap-2.5">
           <div className="flex items-center justify-between gap-2.5">
@@ -484,10 +434,14 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                   type="button"
                   data-testid="header-filter-folders-btn"
                   onClick={() => setFilterModalOpen(true)}
-                  className="min-h-[52px] px-3.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 active:scale-95 border border-sky-400/45 text-sm md:text-base font-semibold text-sky-200 flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
+                  className="min-h-[50px] px-3.5 rounded-xl active:scale-95 text-sm md:text-base font-semibold text-white flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--ac-accent-soft)',
+                    border: '1px solid var(--ac-accent-border)',
+                  }}
                 >
-                  <SlidersHorizontal className="w-5 h-5 text-sky-300" />
-                  <span>Filtrar Pastas</span>
+                  <SlidersHorizontal className="w-5 h-5" style={{ color: 'var(--ac-accent)' }} />
+                  <span>Filtrar</span>
                 </button>
               )}
 
@@ -495,9 +449,9 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                 type="button"
                 onClick={onCycleSort}
                 aria-label={`Ordenar lista: ${SORT_OPTION_LABELS[sortOption]}`}
-                className="min-h-[52px] px-3.5 rounded-xl bg-white/8 hover:bg-white/15 active:scale-95 text-sm md:text-base font-medium text-slate-100 flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
+                className="min-h-[50px] px-3.5 rounded-xl bg-white/8 hover:bg-white/15 active:scale-95 text-sm md:text-base font-medium text-slate-100 flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
               >
-                <ArrowUpDown className="w-5 h-5 text-sky-400" />
+                <ArrowUpDown className="w-5 h-5" style={{ color: 'var(--ac-accent)' }} />
                 <span className="hidden sm:inline">{SORT_OPTION_LABELS[sortOption]}</span>
               </button>
 
@@ -505,12 +459,25 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                 type="button"
                 onClick={onRefreshFolder}
                 aria-label="Atualizar pasta atual"
-                className="min-h-[52px] px-3.5 rounded-xl bg-white/8 hover:bg-white/15 active:scale-95 text-sm md:text-base font-medium text-slate-100 flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
+                className="min-h-[50px] px-3.5 rounded-xl bg-white/8 hover:bg-white/15 active:scale-95 text-sm md:text-base font-medium text-slate-100 flex items-center gap-2 transition whitespace-nowrap cursor-pointer"
               >
                 <RefreshCw
-                  className={`w-5 h-5 text-sky-400 ${isRefreshing ? 'animate-spin' : ''}`}
+                  className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`}
+                  style={{ color: 'var(--ac-accent)' }}
                 />
                 <span className="hidden md:inline">Atualizar</span>
+              </button>
+
+              {/* Discrete Gear Icon Button for Settings */}
+              <button
+                type="button"
+                data-testid="open-settings-btn"
+                onClick={onOpenSettings}
+                aria-label="Configurações"
+                title="Configurações"
+                className="min-w-[50px] min-h-[50px] rounded-xl bg-white/8 hover:bg-white/15 active:scale-95 text-slate-200 hover:text-white flex items-center justify-center transition shrink-0 cursor-pointer"
+              >
+                <Settings className="w-5 h-5" style={{ color: 'var(--ac-accent)' }} />
               </button>
             </div>
           </div>
@@ -525,7 +492,7 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                   onClick={onNavigateUp}
                   className="min-h-[42px] px-3.5 rounded-xl bg-white/10 hover:bg-white/18 active:scale-95 text-sm font-semibold text-white flex items-center gap-1.5 transition shrink-0 cursor-pointer"
                 >
-                  <ArrowLeft className="w-4 h-4 text-sky-400" />
+                  <ArrowLeft className="w-4 h-4" style={{ color: 'var(--ac-accent)' }} />
                   <span>Voltar</span>
                 </button>
               )}
@@ -539,11 +506,19 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenFolder(null)}
-                  className={`min-h-[42px] px-3 rounded-xl text-sm font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+                  className="min-h-[42px] px-3 rounded-xl text-sm font-medium whitespace-nowrap transition cursor-pointer shrink-0"
+                  style={
                     !browsedFolder
-                      ? 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
-                      : 'bg-white/5 text-slate-300 hover:bg-white/12 hover:text-white'
-                  }`}
+                      ? {
+                          backgroundColor: 'var(--ac-accent-soft)',
+                          color: '#FFFFFF',
+                          border: '1px solid var(--ac-accent-border)',
+                        }
+                      : {
+                          backgroundColor: 'rgba(255,255,255,0.06)',
+                          color: '#CBD5E1',
+                        }
+                  }
                 >
                   {currentDriveLabel}
                 </button>
@@ -556,11 +531,19 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                       <button
                         type="button"
                         onClick={() => onOpenFolder(crumb.id)}
-                        className={`min-h-[42px] px-3 rounded-xl text-sm font-medium whitespace-nowrap transition cursor-pointer shrink-0 ${
+                        className="min-h-[42px] px-3 rounded-xl text-sm font-medium whitespace-nowrap transition cursor-pointer shrink-0"
+                        style={
                           isLast
-                            ? 'bg-sky-500/20 text-sky-200 border border-sky-400/40'
-                            : 'bg-white/5 text-slate-300 hover:bg-white/12 hover:text-white'
-                        }`}
+                            ? {
+                                backgroundColor: 'var(--ac-accent-soft)',
+                                color: '#FFFFFF',
+                                border: '1px solid var(--ac-accent-border)',
+                              }
+                            : {
+                                backgroundColor: 'rgba(255,255,255,0.06)',
+                                color: '#CBD5E1',
+                              }
+                        }
                       >
                         {crumb.name}
                       </button>
@@ -582,8 +565,8 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder='Pesquisa parcial sem acentos (ex: "gode", "forro", "serra")...'
-              className="w-full min-h-[52px] pl-12 pr-12 rounded-xl bg-[#0F141E] border border-white/12 focus:border-sky-400/70 focus:outline-none text-base text-white placeholder:text-slate-500"
+              placeholder='Pesquisar vídeo (ex: "gode", "forro")...'
+              className="w-full min-h-[50px] pl-12 pr-12 rounded-xl bg-[#0F141E] border border-white/12 focus:outline-none text-base text-white placeholder:text-slate-500"
             />
             {searchQuery && (
               <button
@@ -616,10 +599,16 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                     type="button"
                     data-testid={`subfolder-card-${sub.id}`}
                     onClick={() => onOpenFolder(sub.id)}
-                    className="w-full min-h-[60px] px-3.5 py-2.5 rounded-2xl bg-[#0D1320] hover:bg-[#141D2F] active:scale-[0.99] border border-white/8 hover:border-sky-400/40 flex items-center gap-3 text-left transition cursor-pointer"
+                    className="w-full min-h-[60px] px-3.5 py-2.5 rounded-2xl bg-[#0D1320] hover:bg-[#141D2F] active:scale-[0.99] border border-white/8 flex items-center gap-3 text-left transition cursor-pointer"
                   >
-                    <div className="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-400/25 flex items-center justify-center shrink-0">
-                      <Folder className="w-5 h-5 text-sky-400" />
+                    <div
+                      className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
+                      style={{
+                        backgroundColor: 'var(--ac-accent-soft)',
+                        border: '1px solid var(--ac-accent-border)',
+                      }}
+                    >
+                      <Folder className="w-5 h-5" style={{ color: 'var(--ac-accent)' }} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-base font-semibold text-white truncate">
@@ -658,14 +647,18 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                   : isAllMode
                     ? folders.length === 0
                       ? 'Conecte um Pen Drive, Cartão SD ou copie vídeos na Memória Interna e toque em Atualizar.'
-                      : 'Toque em "Filtrar Pastas" acima para escolher quais pastas exibir.'
+                      : 'Toque em "Filtrar" acima para escolher quais pastas exibir.'
                     : 'Conecte o armazenamento ou toque em Atualizar para escanear.'}
               </p>
               {isAllMode && !searchQuery && folders.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setFilterModalOpen(true)}
-                  className="mt-4 min-h-[52px] px-6 rounded-xl bg-sky-400 hover:bg-sky-300 text-base font-semibold text-[#07090D] transition cursor-pointer"
+                  className="mt-4 min-h-[52px] px-6 rounded-xl text-base font-semibold transition cursor-pointer"
+                  style={{
+                    backgroundColor: 'var(--ac-accent)',
+                    color: 'var(--ac-on-accent)',
+                  }}
                 >
                   Selecionar Pastas
                 </button>
@@ -681,9 +674,12 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                       <div
                         ref={isActive ? activeRowRef : null}
                         data-active={isActive ? 'true' : 'false'}
-                        className={`flex items-center gap-2 rounded-2xl my-1 transition ${
-                          isActive ? 'bg-sky-500/18' : 'hover:bg-white/[0.05]'
-                        }`}
+                        className="flex items-center gap-2 rounded-2xl my-1 transition"
+                        style={
+                          isActive
+                            ? { backgroundColor: 'var(--ac-accent-soft)' }
+                            : undefined
+                        }
                       >
                         <button
                           type="button"
@@ -691,9 +687,8 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                           className="flex-1 min-w-0 min-h-[84px] px-3.5 py-2.5 flex items-center gap-3.5 text-left cursor-pointer"
                         >
                           <span
-                            className={`font-mono-code text-sm font-bold tabular-nums w-6 shrink-0 text-right ${
-                              isActive ? 'text-sky-400' : 'text-slate-500'
-                            }`}
+                            className="font-mono-code text-sm font-bold tabular-nums w-6 shrink-0 text-right"
+                            style={{ color: isActive ? 'var(--ac-accent)' : '#64748B' }}
                           >
                             {String(idx + 1).padStart(2, '0')}
                           </span>
@@ -715,7 +710,12 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                             <div className="mt-1 text-xs md:text-sm text-slate-400 tabular-nums truncate">
                               {isAllMode && item.folderName && (
                                 <>
-                                  <span className="text-sky-300 font-medium">{item.folderName}</span>
+                                  <span
+                                    className="font-medium"
+                                    style={{ color: 'var(--ac-accent-text)' }}
+                                  >
+                                    {item.folderName}
+                                  </span>
                                   {' · '}
                                 </>
                               )}
@@ -724,7 +724,10 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
                           </div>
 
                           {isActive && (
-                            <span className="hidden xl:inline text-sm font-semibold text-sky-400 shrink-0 pr-1">
+                            <span
+                              className="hidden xl:inline text-sm font-semibold shrink-0 pr-1"
+                              style={{ color: 'var(--ac-accent)' }}
+                            >
                               {isPlaying ? 'Tocando' : 'Pausado'}
                             </span>
                           )}
@@ -761,7 +764,7 @@ export const SplitScreenView: React.FC<SplitScreenViewProps> = ({
         />
       )}
 
-      {/* Delete Confirmation Modal — Oversized 9" touch buttons */}
+      {/* Delete Confirmation Modal */}
       {pendingDelete && (
         <div
           role="dialog"

@@ -104,7 +104,7 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-200/90 tabular-nums">
               {isAllFoldersMode && (
                 <>
-                  <span className="text-sky-300 font-medium">
+                  <span className="font-medium" style={{ color: 'var(--ac-accent-text)' }}>
                     Todas as Pastas{video.folderName ? ` · ${video.folderName}` : ''}
                   </span>
                   <span aria-hidden="true" className="text-slate-500">·</span>
@@ -136,13 +136,13 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
             aria-label="Ativar modo Picture-in-Picture (PiP)"
             className="min-h-[58px] px-5 rounded-2xl bg-white/12 hover:bg-white/22 active:scale-95 text-white text-base font-medium backdrop-blur-md border border-white/12 flex items-center gap-2.5 transition whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <PictureInPicture2 className="w-6 h-6 text-sky-400" />
+            <PictureInPicture2 className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />
             <span>PiP</span>
           </button>
         </div>
       </header>
 
-      {/* EXTRA-LARGE 9" AUTOMOTIVE CENTER CONTROLS (Original Turn-1 signature design, scaled way up!) */}
+      {/* EXTRA-LARGE 9" AUTOMOTIVE CENTER CONTROLS */}
       <div
         data-no-gesture="true"
         onPointerDown={onResetHideTimer}
@@ -161,9 +161,14 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
 
         <button
           type="button"
+          data-testid="center-play-pause-btn"
           onClick={onTogglePlayPause}
           aria-label={isPlaying ? 'Pausar vídeo (controle central)' : 'Reproduzir vídeo (controle central)'}
-          className="w-28 h-28 md:w-32 md:h-32 rounded-full bg-sky-400 hover:bg-sky-300 active:scale-95 text-[#06090F] flex items-center justify-center shadow-2xl shadow-sky-500/35 transition cursor-pointer"
+          className="w-28 h-28 md:w-32 md:h-32 rounded-full active:scale-95 flex items-center justify-center shadow-2xl transition cursor-pointer hover:brightness-110"
+          style={{
+            backgroundColor: 'var(--ac-accent)',
+            color: 'var(--ac-on-accent)',
+          }}
         >
           {isPlaying ? (
             <Pause className="w-13 h-13 md:w-14 md:h-14 fill-current" />
@@ -182,7 +187,7 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
         </button>
       </div>
 
-      {/* BOTTOM BAR — Original Turn-1 sleek frosted button aesthetic, oversized 64px+ for 9" touch */}
+      {/* BOTTOM BAR */}
       <footer
         data-no-gesture="true"
         onPointerDown={onResetHideTimer}
@@ -212,7 +217,7 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
               }}
               className="auto-scrubber w-full"
               style={{
-                background: `linear-gradient(to right, #38bdf8 ${progressPercent}%, rgba(255,255,255,0.24) ${progressPercent}%)`,
+                background: `linear-gradient(to right, var(--ac-accent) ${progressPercent}%, rgba(255,255,255,0.24) ${progressPercent}%)`,
                 height: '12px',
                 borderRadius: '9999px',
               }}
@@ -239,9 +244,9 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
               aria-label={`Modo de reprodução: ${PLAYBACK_MODE_LABELS[playbackMode]}`}
               className="min-h-[64px] px-5 rounded-2xl bg-white/12 hover:bg-white/22 active:scale-95 backdrop-blur-md border border-white/12 text-white text-base font-medium flex items-center gap-3 transition whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {playbackMode === 'sequential' && <Repeat className="w-6 h-6 text-sky-400" />}
-              {playbackMode === 'shuffle' && <Shuffle className="w-6 h-6 text-sky-400" />}
-              {playbackMode === 'repeat-one' && <Repeat1 className="w-6 h-6 text-sky-400" />}
+              {playbackMode === 'sequential' && <Repeat className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />}
+              {playbackMode === 'shuffle' && <Shuffle className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />}
+              {playbackMode === 'repeat-one' && <Repeat1 className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />}
               <span>{PLAYBACK_MODE_LABELS[playbackMode]}</span>
             </button>
 
@@ -254,7 +259,7 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
               aria-label={`Proporção de tela: ${ASPECT_RATIO_LABELS[aspectRatio]}`}
               className="min-h-[64px] px-5 rounded-2xl bg-white/12 hover:bg-white/22 active:scale-95 backdrop-blur-md border border-white/12 text-white text-base font-medium flex items-center gap-3 transition whitespace-nowrap shrink-0 cursor-pointer"
             >
-              <Maximize2 className="w-6 h-6 text-sky-400" />
+              <Maximize2 className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />
               <span>{ASPECT_RATIO_LABELS[aspectRatio]}</span>
             </button>
           </div>
@@ -297,7 +302,7 @@ export const FullScreenControls: React.FC<FullScreenControlsProps> = ({
             aria-label="Abrir pastas e lista de arquivos"
             className="min-h-[64px] px-6 rounded-2xl bg-slate-800/92 hover:bg-slate-700 active:scale-95 border border-white/18 text-white text-base font-semibold flex items-center gap-3 transition whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <FolderOpen className="w-6 h-6 text-sky-400" />
+            <FolderOpen className="w-6 h-6" style={{ color: 'var(--ac-accent)' }} />
             <span>Pastas / Lista</span>
           </button>
         </div>

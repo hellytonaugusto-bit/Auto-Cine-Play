@@ -1,6 +1,7 @@
 package com.autocine.player.viewmodel
 
 import android.app.Application
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocine.player.data.FolderEntry
@@ -8,8 +9,11 @@ import com.autocine.player.data.PlaybackMode
 import com.autocine.player.data.PreferencesManager
 import com.autocine.player.data.SortOrder
 import com.autocine.player.data.StorageRepository
+import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
 import com.autocine.player.service.VideoPlaybackService
+import com.autocine.player.ui.theme.AppColorTheme
+import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,12 +27,20 @@ data class PlayerUiState(
     val folderUri: String = "",
     val rootFolderName: String = "Nenhuma pasta selecionada",
     val folderName: String = "Nenhuma pasta selecionada",
+    val activeStorageSlot: StorageSlot = StorageSlot.USB,
+    val usbFolderUri: String = "",
+    val usbFolderName: String = "Pen Drive",
+    val sdFolderUri: String = "",
+    val sdFolderName: String = "Cartão SD",
     val folderBreadcrumbs: List<String> = emptyList(),
     val currentSubfolders: List<FolderEntry> = emptyList(),
     val isAllFoldersMode: Boolean = false,
     val selectableAllFolders: List<FolderEntry> = emptyList(),
     val selectedAllFolderIds: Set<String>? = null,
     val isAllFilterDialogOpen: Boolean = false,
+    val isSettingsOpen: Boolean = false,
+    val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
+    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
     val allVideos: List<VideoFileItem> = emptyList(),
     val browsedVideos: List<VideoFileItem> = emptyList(),
     val visibleVideos: List<VideoFileItem> = emptyList(),
@@ -67,11 +79,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     folderUri = saved.folderUri,
                     rootFolderName = saved.folderDisplayName,
                     folderName = if (saved.playAllFolders) "Todas as Pastas" else saved.folderDisplayName,
+                    activeStorageSlot = if (saved.playAllFolders) StorageSlot.ALL else saved.activeStorageSlot,
+                    usbFolderUri = saved.usbFolderUri,
+                    usbFolderName = saved.usbFolderName,
+                    sdFolderUri = saved.sdFolderUri,
+                    sdFolderName = saved.sdFolderName,
                     isAllFoldersMode = saved.playAllFolders,
                     selectedAllFolderIds = savedSelection,
                     playbackMode = saved.playbackMode,
                     aspectRatio = saved.aspectRatio,
-                    sortOrder = saved.sortOrder
+                    sortOrder = saved.sortOrder,
+                    uiScaleLevel = saved.uiScaleLevel,
+                    colorTheme = saved.colorTheme
                 )
             }
             if (saved.playAllFolders) {
@@ -80,6 +99,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 loadDirectory(
                     uriString = saved.folderUri,
                     rootName = saved.folderDisplayName,
+                    slot = saved.activeStorageSlot,
                     relativePath = emptyList(),
                     autoResumeVideoId = saved.lastVideoId,
                     replaceActiveQueue = true
@@ -111,16 +131,84 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun onFolderSelected(uriString: String, displayName: String) {
+    fun onFolderSelected(uriString: String, displayName: String, slot: StorageSlot = StorageSlot.USB) {
         viewModelScope.launch {
-            prefs.saveFolder(uriString, displayName)
+            prefs.saveFolder(uriString, displayName, slot)
+            _uiState.update {
+                when (slot) {
+                    StorageSlot.USB -> it.copy(usbFolderUri = uriString, usbFolderName = displayName)
+                    StorageSlot.SD_CARD -> it.copy(sdFolderUri = uriString, sdFolderName = displayName)
+                    else -> it
+                }
+            }
             loadDirectory(
                 uriString = uriString,
                 rootName = displayName,
+                slot = slot,
                 relativePath = emptyList(),
                 autoResumeVideoId = "",
                 replaceActiveQueue = _uiState.value.currentVideo == null
             )
+        }
+    }
+
+    fun selectStorageSlot(slot: StorageSlot, onRequestFolderPicker: (StorageSlot) -> Unit) {
+        val state = _uiState.value
+        when (slot) {
+            StorageSlot.ALL -> enableAllFoldersMode()
+            StorageSlot.USB -> {
+                if (state.usbFolderUri.isNotEmpty() && state.activeStorageSlot != StorageSlot.USB) {
+                    viewModelScope.launch {
+                        prefs.saveFolder(state.usbFolderUri, state.usbFolderName, StorageSlot.USB)
+                        loadDirectory(
+                            uriString = state.usbFolderUri,
+                            rootName = state.usbFolderName,
+                            slot = StorageSlot.USB,
+                            relativePath = emptyList(),
+                            autoResumeVideoId = "",
+                            replaceActiveQueue = state.currentVideo == null
+                        )
+                    }
+                } else {
+                    onRequestFolderPicker(StorageSlot.USB)
+                }
+            }
+            StorageSlot.SD_CARD -> {
+                if (state.sdFolderUri.isNotEmpty() && state.activeStorageSlot != StorageSlot.SD_CARD) {
+                    viewModelScope.launch {
+                        prefs.saveFolder(state.sdFolderUri, state.sdFolderName, StorageSlot.SD_CARD)
+                        loadDirectory(
+                            uriString = state.sdFolderUri,
+                            rootName = state.sdFolderName,
+                            slot = StorageSlot.SD_CARD,
+                            relativePath = emptyList(),
+                            autoResumeVideoId = "",
+                            replaceActiveQueue = state.currentVideo == null
+                        )
+                    }
+                } else {
+                    onRequestFolderPicker(StorageSlot.SD_CARD)
+                }
+            }
+            StorageSlot.INTERNAL -> {
+                val internalDir = Environment.getExternalStorageDirectory()
+                if (internalDir != null && internalDir.exists() && internalDir.canRead()) {
+                    val path = internalDir.absolutePath
+                    viewModelScope.launch {
+                        prefs.saveFolder(path, "Memória Interna", StorageSlot.INTERNAL)
+                        loadDirectory(
+                            uriString = path,
+                            rootName = "Memória Interna",
+                            slot = StorageSlot.INTERNAL,
+                            relativePath = emptyList(),
+                            autoResumeVideoId = "",
+                            replaceActiveQueue = state.currentVideo == null
+                        )
+                    }
+                } else {
+                    onRequestFolderPicker(StorageSlot.INTERNAL)
+                }
+            }
         }
     }
 
@@ -134,6 +222,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
                 relativePath = entry.relativePath,
                 autoResumeVideoId = "",
                 replaceActiveQueue = false
@@ -149,6 +238,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
                 relativePath = parentPath,
                 autoResumeVideoId = "",
                 replaceActiveQueue = false
@@ -164,6 +254,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
                 relativePath = targetPath,
                 autoResumeVideoId = "",
                 replaceActiveQueue = false
@@ -211,6 +302,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun openSettings() {
+        _uiState.update { it.copy(isSettingsOpen = true) }
+    }
+
+    fun closeSettings() {
+        _uiState.update { it.copy(isSettingsOpen = false) }
+    }
+
+    fun setUiScaleLevel(level: UiScaleLevel) {
+        _uiState.update { it.copy(uiScaleLevel = level) }
+        viewModelScope.launch { prefs.saveUiScaleLevel(level) }
+    }
+
+    fun setColorTheme(theme: AppColorTheme) {
+        _uiState.update { it.copy(colorTheme = theme) }
+        viewModelScope.launch { prefs.saveColorTheme(theme) }
+    }
+
     fun refreshCurrentFolder() {
         val state = _uiState.value
         viewModelScope.launch {
@@ -220,6 +329,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 loadDirectory(
                     uriString = state.folderUri,
                     rootName = state.rootFolderName,
+                    slot = state.activeStorageSlot,
                     relativePath = state.folderBreadcrumbs,
                     autoResumeVideoId = state.currentVideo?.id.orEmpty(),
                     replaceActiveQueue = false
@@ -237,6 +347,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 isScanning = true,
                 isAllFoldersMode = true,
+                activeStorageSlot = StorageSlot.ALL,
                 folderBreadcrumbs = emptyList(),
                 currentSubfolders = emptyList(),
                 folderName = "Todas as Pastas"
@@ -249,6 +360,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun loadDirectory(
         uriString: String,
         rootName: String,
+        slot: StorageSlot,
         relativePath: List<String>,
         autoResumeVideoId: String,
         replaceActiveQueue: Boolean
@@ -258,6 +370,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             it.copy(
                 isScanning = true,
                 isAllFoldersMode = false,
+                activeStorageSlot = slot,
                 folderUri = uriString,
                 rootFolderName = rootName,
                 folderName = displayTitle,

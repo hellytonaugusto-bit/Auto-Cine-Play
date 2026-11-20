@@ -21,9 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.autocine.player.data.StorageSlot
 import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import org.videolan.libvlc.util.VLCVideoLayout
 
 @Composable
@@ -31,18 +34,28 @@ fun PlayerScreen(
     viewModel: PlayerViewModel,
     getEngine: () -> VlcPlayerEngine?,
     onEnterPip: () -> Unit,
-    onPickFolder: () -> Unit,
+    onPickFolderForSlot: (StorageSlot) -> Unit,
     onAdjustBrightness: (Float) -> Unit,
     onGetBrightness: () -> Float,
     onAdjustVolume: (Float) -> Unit,
     onGetVolume: () -> Float
 ) {
-    val state by viewModel.uiState.collectAsState()
+    // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn
+    // NÃO recomponham a cada tick de progresso do vídeo em hardware modesto.
+    val layoutModeFlow = remember {
+        viewModel.uiState
+            .map { Triple(it.isSplitScreen, it.isInPipMode, it.isPlaying) }
+            .distinctUntilChanged()
+    }
+    val (isSplitScreen, isInPipMode, isPlaying) by layoutModeFlow.collectAsState(
+        initial = Triple(false, false, false)
+    )
+
     var controlsVisible by remember { mutableStateOf(true) }
 
     // Oculta automaticamente os controles após 4.5 segundos em tela cheia
-    LaunchedEffect(controlsVisible, state.isPlaying, state.isSplitScreen, state.isInPipMode) {
-        if (controlsVisible && state.isPlaying && !state.isSplitScreen && !state.isInPipMode) {
+    LaunchedEffect(controlsVisible, isPlaying, isSplitScreen, isInPipMode) {
+        if (controlsVisible && isPlaying && !isSplitScreen && !isInPipMode) {
             delay(4500L)
             controlsVisible = false
         }
@@ -53,87 +66,145 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        if (state.isSplitScreen && !state.isInPipMode) {
-            Row(modifier = Modifier.fillMaxSize()) {
-                // Esquerda: Mini-Player contínuo (toque no vídeo para voltar à tela cheia)
-                SplitScreenLeftPane(
-                    state = state,
-                    videoSurface = {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { viewModel.setSplitScreen(false) }
-                        ) {
-                            VlcVideoSurface(getEngine = getEngine, modifier = Modifier.fillMaxSize())
-                        }
-                    },
-                    onTogglePlayPause = viewModel::togglePlayPause,
-                    onPrev = viewModel::playPrevious,
-                    onNext = viewModel::playNext,
-                    onCycleMode = viewModel::cyclePlaybackMode,
-                    onCycleAspect = viewModel::cycleAspectRatio,
-                    onEnterPip = onEnterPip,
-                    onPickFolder = onPickFolder,
-                    onPlayAllFolders = viewModel::enableAllFoldersMode,
-                    onOpenAllFilter = viewModel::openAllFoldersFilter,
-                    modifier = Modifier
-                        .weight(0.42f)
-                        .fillMaxHeight()
-                        .padding(16.dp)
-                )
-
-                // Direita: Navegação por subpastas + Lista com miniaturas, busca parcial, filtro Todas, refresh e delete
-                SplitScreenFileList(
-                    state = state,
-                    onSelectVideo = viewModel::playVideoFromList,
-                    onOpenSubfolder = viewModel::openSubfolder,
-                    onNavigateUp = viewModel::navigateUpFolder,
-                    onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,
-                    onOpenAllFilter = viewModel::openAllFoldersFilter,
-                    onDismissAllFilter = viewModel::closeAllFoldersFilter,
-                    onApplyAllFilter = viewModel::applyAllFoldersSelection,
-                    onSearchChange = viewModel::updateSearchQuery,
-                    onRefresh = viewModel::refreshCurrentFolder,
-                    onCycleSort = viewModel::cycleSortOrder,
-                    onRequestDelete = viewModel::requestDelete,
-                    onConfirmDelete = viewModel::confirmDelete,
-                    onCancelDelete = viewModel::cancelDelete,
-                    modifier = Modifier
-                        .weight(0.58f)
-                        .fillMaxHeight()
-                )
-            }
+        if (isSplitScreen && !isInPipMode) {
+            SplitScreenContent(
+                viewModel = viewModel,
+                getEngine = getEngine,
+                onEnterPip = onEnterPip,
+                onPickFolderForSlot = onPickFolderForSlot
+            )
         } else {
-            // Tela Cheia ou Picture-in-Picture (PiP)
-            VlcVideoSurface(getEngine = getEngine, modifier = Modifier.fillMaxSize())
-
-            if (!state.isInPipMode) {
-                GestureOverlay(
-                    positionMs = state.positionMs,
-                    durationMs = state.durationMs,
-                    onTapToggleControls = { controlsVisible = !controlsVisible },
-                    onSeekCommit = viewModel::seekTo,
-                    onGetBrightness = onGetBrightness,
-                    onAdjustBrightness = onAdjustBrightness,
-                    onGetVolume = onGetVolume,
-                    onAdjustVolume = onAdjustVolume
-                )
-
-                FullScreenControls(
-                    visible = controlsVisible,
-                    state = state,
-                    onTogglePlayPause = viewModel::togglePlayPause,
-                    onPrev = viewModel::playPrevious,
-                    onNext = viewModel::playNext,
-                    onSeek = viewModel::seekTo,
-                    onCycleMode = viewModel::cyclePlaybackMode,
-                    onCycleAspect = viewModel::cycleAspectRatio,
-                    onOpenSplitList = { viewModel.setSplitScreen(true) },
-                    onEnterPip = onEnterPip
-                )
-            }
+            FullscreenContent(
+                viewModel = viewModel,
+                getEngine = getEngine,
+                isInPipMode = isInPipMode,
+                controlsVisible = controlsVisible,
+                onToggleControls = { controlsVisible = !controlsVisible },
+                onEnterPip = onEnterPip,
+                onAdjustBrightness = onAdjustBrightness,
+                onGetBrightness = onGetBrightness,
+                onAdjustVolume = onAdjustVolume,
+                onGetVolume = onGetVolume
+            )
         }
+    }
+}
+
+@Composable
+private fun SplitScreenContent(
+    viewModel: PlayerViewModel,
+    getEngine: () -> VlcPlayerEngine?,
+    onEnterPip: () -> Unit,
+    onPickFolderForSlot: (StorageSlot) -> Unit
+) {
+    // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)
+    val browserStateFlow = remember {
+        viewModel.uiState
+            .map { state ->
+                state.copy(positionMs = 0L, durationMs = 0L)
+            }
+            .distinctUntilChanged()
+    }
+    val state by browserStateFlow.collectAsState(initial = viewModel.uiState.value.copy(positionMs = 0L, durationMs = 0L))
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        // Esquerda: Mini-Player contínuo + Controles principais + Armazenamento com rolagem
+        SplitScreenLeftPane(
+            isPlaying = state.isPlaying,
+            activeStorageSlot = state.activeStorageSlot,
+            hasCustomAllFilter = state.selectedAllFolderIds != null,
+            videoSurface = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { viewModel.setSplitScreen(false) }
+                ) {
+                    VlcVideoSurface(getEngine = getEngine, modifier = Modifier.fillMaxSize())
+                }
+            },
+            onTogglePlayPause = viewModel::togglePlayPause,
+            onPrev = viewModel::playPrevious,
+            onNext = viewModel::playNext,
+            onEnterPip = onEnterPip,
+            onSelectStorageSlot = { slot ->
+                viewModel.selectStorageSlot(slot, onPickFolderForSlot)
+            },
+            onOpenAllFilter = viewModel::openAllFoldersFilter,
+            modifier = Modifier
+                .weight(0.40f)
+                .fillMaxHeight()
+                .padding(14.dp)
+        )
+
+        // Direita: Navegação por subpastas + Lista com miniaturas, busca, configurações, refresh e delete
+        SplitScreenFileList(
+            state = state,
+            onSelectVideo = viewModel::playVideoFromList,
+            onOpenSubfolder = viewModel::openSubfolder,
+            onNavigateUp = viewModel::navigateUpFolder,
+            onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,
+            onOpenAllFilter = viewModel::openAllFoldersFilter,
+            onDismissAllFilter = viewModel::closeAllFoldersFilter,
+            onApplyAllFilter = viewModel::applyAllFoldersSelection,
+            onOpenSettings = viewModel::openSettings,
+            onDismissSettings = viewModel::closeSettings,
+            onSelectUiScale = viewModel::setUiScaleLevel,
+            onSelectColorTheme = viewModel::setColorTheme,
+            onSearchChange = viewModel::updateSearchQuery,
+            onRefresh = viewModel::refreshCurrentFolder,
+            onCycleSort = viewModel::cycleSortOrder,
+            onRequestDelete = viewModel::requestDelete,
+            onConfirmDelete = viewModel::confirmDelete,
+            onCancelDelete = viewModel::cancelDelete,
+            modifier = Modifier
+                .weight(0.60f)
+                .fillMaxHeight()
+        )
+    }
+}
+
+@Composable
+private fun FullscreenContent(
+    viewModel: PlayerViewModel,
+    getEngine: () -> VlcPlayerEngine?,
+    isInPipMode: Boolean,
+    controlsVisible: Boolean,
+    onToggleControls: () -> Unit,
+    onEnterPip: () -> Unit,
+    onAdjustBrightness: (Float) -> Unit,
+    onGetBrightness: () -> Float,
+    onAdjustVolume: (Float) -> Unit,
+    onGetVolume: () -> Float
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    VlcVideoSurface(getEngine = getEngine, modifier = Modifier.fillMaxSize())
+
+    if (!isInPipMode) {
+        GestureOverlay(
+            positionMs = state.positionMs,
+            durationMs = state.durationMs,
+            onTapToggleControls = onToggleControls,
+            onSeekCommit = viewModel::seekTo,
+            onGetBrightness = onGetBrightness,
+            onAdjustBrightness = onAdjustBrightness,
+            onGetVolume = onGetVolume,
+            onAdjustVolume = onAdjustVolume
+        )
+
+        FullScreenControls(
+            visible = controlsVisible,
+            state = state,
+            onTogglePlayPause = viewModel::togglePlayPause,
+            onPrev = viewModel::playPrevious,
+            onNext = viewModel::playNext,
+            onSeek = viewModel::seekTo,
+            onCycleMode = viewModel::cyclePlaybackMode,
+            onCycleAspect = viewModel::cycleAspectRatio,
+            onOpenSplitList = { viewModel.setSplitScreen(true) },
+            onEnterPip = onEnterPip
+        )
     }
 }
 

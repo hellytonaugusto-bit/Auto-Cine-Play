@@ -119,6 +119,15 @@ export const VideoStage: React.FC<VideoStageProps> = ({
     setImageError(false);
   }, [video?.id]);
 
+  useEffect(() => {
+    return () => {
+      if (hudClearTimerRef.current) {
+        window.clearTimeout(hudClearTimerRef.current);
+        hudClearTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // Keep real <video> element synchronized when user loads local files from USB/Disk
   useEffect(() => {
     const el = videoElRef.current;
@@ -260,11 +269,11 @@ export const VideoStage: React.FC<VideoStageProps> = ({
     gestureStateRef.current.pointerId = null;
     gestureStateRef.current.lockedAxis = null;
 
-    if (wasDrag && !cancelled) {
+    if (wasDrag) {
       if (hudClearTimerRef.current) window.clearTimeout(hudClearTimerRef.current);
       hudClearTimerRef.current = window.setTimeout(() => {
         setGestureHud(null);
-      }, 450);
+      }, 600);
     } else {
       setGestureHud(null);
     }
@@ -387,9 +396,9 @@ export const VideoStage: React.FC<VideoStageProps> = ({
             {gestureHud.type === 'seek' && (
               <>
                 {(gestureHud.deltaSeconds ?? 0) >= 0 ? (
-                  <FastForward className="w-11 h-11 text-sky-400" />
+                  <FastForward className="w-11 h-11" style={{ color: 'var(--ac-accent)' }} />
                 ) : (
-                  <Rewind className="w-11 h-11 text-sky-400" />
+                  <Rewind className="w-11 h-11" style={{ color: 'var(--ac-accent)' }} />
                 )}
                 <div className="font-display text-3xl font-bold text-white tabular-nums">
                   {(gestureHud.deltaSeconds ?? 0) >= 0 ? '+' : ''}
@@ -421,15 +430,18 @@ export const VideoStage: React.FC<VideoStageProps> = ({
                 {gestureHud.value === 0 ? (
                   <VolumeX className="w-10 h-10 text-slate-400" />
                 ) : (
-                  <Volume2 className="w-10 h-10 text-sky-400" />
+                  <Volume2 className="w-10 h-10" style={{ color: 'var(--ac-accent)' }} />
                 )}
                 <div className="text-xl font-semibold text-white tabular-nums">
                   Volume {gestureHud.value}%
                 </div>
                 <div className="w-52 h-3 rounded-full bg-white/15 overflow-hidden">
                   <div
-                    className="h-full bg-sky-400 rounded-full"
-                    style={{ width: `${gestureHud.value}%` }}
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${gestureHud.value}%`,
+                      backgroundColor: 'var(--ac-accent)',
+                    }}
                   />
                 </div>
               </>
