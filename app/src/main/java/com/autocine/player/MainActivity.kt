@@ -139,9 +139,10 @@ class MainActivity : ComponentActivity() {
                     .map { it.colorTheme to it.uiScaleLevel }
                     .distinctUntilChanged()
             }
-            val (colorTheme, uiScaleLevel) by appearanceFlow.collectAsState(
+            val appearance by appearanceFlow.collectAsState(
                 initial = AppColorTheme.AUTOMOTIVE_BLUE to UiScaleLevel.DEFAULT
             )
+            val (colorTheme, uiScaleLevel) = appearance
             AutoCineTheme(
                 colorTheme = colorTheme,
                 uiScaleLevel = uiScaleLevel

@@ -47,9 +47,10 @@ fun PlayerScreen(
             .map { Triple(it.isSplitScreen, it.isInPipMode, it.isPlaying) }
             .distinctUntilChanged()
     }
-    val (isSplitScreen, isInPipMode, isPlaying) by layoutModeFlow.collectAsState(
+    val layoutMode by layoutModeFlow.collectAsState(
         initial = Triple(false, false, false)
     )
+    val (isSplitScreen, isInPipMode, isPlaying) = layoutMode
 
     var controlsVisible by remember { mutableStateOf(true) }
 

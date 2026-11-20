@@ -85,4 +85,15 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(splitKt, /fun SettingsDialog/);
   assert.match(splitKt, /LruCache/);
   assert.match(splitKt, /Dispatchers\.IO/);
+
+  // Regression check: Kotlin forbids destructuring declarations using `by` delegation
+  for (const file of ANDROID_PROJECT_FILES) {
+    if (file.path.endsWith('.kt')) {
+      assert.doesNotMatch(
+        file.content,
+        /\b(val|var)\s*\([^)]+\)\s+by\b/,
+        `${file.path} must not use destructuring declaration with 'by'`
+      );
+    }
+  }
 });
