@@ -1,16 +1,11 @@
 package com.autocine.player.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,13 +13,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.autocine.player.data.StorageSlot
@@ -34,7 +26,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import org.videolan.libvlc.util.VLCVideoLayout
-import kotlin.math.roundToInt
 
 @Composable
 fun PlayerScreen(
@@ -43,7 +34,9 @@ fun PlayerScreen(
     onEnterPip: () -> Unit,
     onPickFolderForSlot: (StorageSlot) -> Unit,
     onAdjustBrightness: (Float) -> Unit,
-    onGetBrightness: () -> Float
+    onGetBrightness: () -> Float,
+    onAdjustVolume: (Float) -> Unit,
+    onGetVolume: () -> Float
 ) {
     // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn
     // NÃO recomponham a cada tick de progresso do vídeo em hardware modesto.
@@ -58,7 +51,6 @@ fun PlayerScreen(
     val (isSplitScreen, isInPipMode, isPlaying) = layoutMode
 
     var controlsVisible by remember { mutableStateOf(true) }
-    var miniSlotBounds by remember { mutableStateOf<Rect?>(null) }
 
     // Oculta automaticamente os controles após 4.5 segundos em tela cheia
     LaunchedEffect(controlsVisible, isPlaying, isSplitScreen, isInPipMode) {
@@ -68,93 +60,34 @@ fun PlayerScreen(
         }
     }
 
-    // Reaplica a proporção de tela sempre que alterna entre Mini-Player, Tela Cheia e PiP
-    LaunchedEffect(engine, isSplitScreen, isInPipMode) {
-        engine?.reapplyAspectRatio()
-    }
-
-    val showSplitLayout = isSplitScreen && !isInPipMode
-    val density = LocalDensity.current
-
-    BoxWithConstraints(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        val fallbackPaddingPx = with(density) { 26.dp.toPx() }
-        val fallbackMiniWidthPx = (constraints.maxWidth * 0.40f - fallbackPaddingPx * 2f).coerceAtLeast(120f)
-        val fallbackMiniHeightPx = fallbackMiniWidthPx * 9f / 16f
-        val effectiveMiniRect = miniSlotBounds ?: Rect(
-            left = fallbackPaddingPx,
-            top = fallbackPaddingPx,
-            right = fallbackPaddingPx + fallbackMiniWidthPx,
-            bottom = fallbackPaddingPx + fallbackMiniHeightPx
-        )
-
-        // Camada 1: Interface da Tela Dividida (painel lateral + lista de vídeos)
-        if (showSplitLayout) {
+        if (isSplitScreen && !isInPipMode) {
             SplitScreenContent(
                 viewModel = viewModel,
+                engine = engine,
+                onExpandToFullscreen = {
+                    controlsVisible = true
+                    viewModel.setSplitScreen(false)
+                },
                 onEnterPip = onEnterPip,
-                onPickFolderForSlot = onPickFolderForSlot,
-                onVideoSlotPositioned = { rect -> miniSlotBounds = rect }
+                onPickFolderForSlot = onPickFolderForSlot
             )
-        }
-
-        // Camada 2: ÚNICA instância persistente do VLCVideoLayout (NUNCA destruída nem recriada).
-        // Alternar entre Mini-Player e Tela Cheia apenas redimensiona e reposiciona o Modifier,
-        // eliminando lag e tela preta causados por detachViews()/attachViews().
-        val videoModifier = if (showSplitLayout) {
-            val miniWidthDp = with(density) { effectiveMiniRect.width.toDp() }
-            val miniHeightDp = with(density) { effectiveMiniRect.height.toDp() }
-            Modifier
-                .offset {
-                    IntOffset(
-                        x = effectiveMiniRect.left.roundToInt(),
-                        y = effectiveMiniRect.top.roundToInt()
-                    )
-                }
-                .size(width = miniWidthDp, height = miniHeightDp)
-                .clip(RoundedCornerShape(14.dp))
         } else {
-            Modifier.fillMaxSize()
-        }
-
-        PersistentVlcVideoSurface(
-            engine = engine,
-            modifier = videoModifier
-        )
-
-        // Área clicável transparente exatamente sobre o mini-player para expandir instantaneamente para Tela Cheia
-        if (showSplitLayout) {
-            val miniWidthDp = with(density) { effectiveMiniRect.width.toDp() }
-            val miniHeightDp = with(density) { effectiveMiniRect.height.toDp() }
-            Box(
-                modifier = Modifier
-                    .offset {
-                        IntOffset(
-                            x = effectiveMiniRect.left.roundToInt(),
-                            y = effectiveMiniRect.top.roundToInt()
-                        )
-                    }
-                    .size(width = miniWidthDp, height = miniHeightDp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable {
-                        controlsVisible = true
-                        viewModel.setSplitScreen(false)
-                    }
-            )
-        }
-
-        // Camada 3: Gestos e Controles de Tela Cheia desenhados por cima da mesma instância de vídeo
-        if (!showSplitLayout && !isInPipMode) {
-            FullscreenOverlays(
+            FullscreenContent(
                 viewModel = viewModel,
+                engine = engine,
+                isInPipMode = isInPipMode,
                 controlsVisible = controlsVisible,
                 onToggleControls = { controlsVisible = !controlsVisible },
                 onEnterPip = onEnterPip,
                 onAdjustBrightness = onAdjustBrightness,
-                onGetBrightness = onGetBrightness
+                onGetBrightness = onGetBrightness,
+                onAdjustVolume = onAdjustVolume,
+                onGetVolume = onGetVolume
             )
         }
     }
@@ -163,9 +96,10 @@ fun PlayerScreen(
 @Composable
 private fun SplitScreenContent(
     viewModel: PlayerViewModel,
+    engine: VlcPlayerEngine?,
+    onExpandToFullscreen: () -> Unit,
     onEnterPip: () -> Unit,
-    onPickFolderForSlot: (StorageSlot) -> Unit,
-    onVideoSlotPositioned: (Rect) -> Unit
+    onPickFolderForSlot: (StorageSlot) -> Unit
 ) {
     // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)
     val browserStateFlow = remember {
@@ -180,12 +114,18 @@ private fun SplitScreenContent(
     )
 
     Row(modifier = Modifier.fillMaxSize()) {
-        // Esquerda: Espaço reservado 16:9 para o Mini-Player persistente + Controles + Armazenamento
+        // Esquerda: Mini-Player com VlcVideoSurface nativo + Controles + Armazenamento
         SplitScreenLeftPane(
             isPlaying = state.isPlaying,
             activeStorageSlot = state.activeStorageSlot,
             hasCustomAllFilter = state.selectedAllFolderIds != null,
-            onVideoSlotPositioned = onVideoSlotPositioned,
+            videoSurface = {
+                VlcVideoSurface(
+                    engine = engine,
+                    modifier = Modifier.fillMaxSize()
+                )
+            },
+            onExpandVideo = onExpandToFullscreen,
             onTogglePlayPause = viewModel::togglePlayPause,
             onPrev = viewModel::playPrevious,
             onNext = viewModel::playNext,
@@ -200,7 +140,7 @@ private fun SplitScreenContent(
                 .padding(14.dp)
         )
 
-        // Direita: Navegação por subpastas + Lista com miniaturas, busca com Limpar, configurações, refresh e delete
+        // Direita: Navegação instantânea por subpastas + Lista com miniaturas sob demanda, busca com Limpar, configurações, refresh e delete
         SplitScreenFileList(
             state = state,
             onSelectVideo = viewModel::playVideoFromList,
@@ -228,49 +168,64 @@ private fun SplitScreenContent(
 }
 
 @Composable
-private fun FullscreenOverlays(
+private fun FullscreenContent(
     viewModel: PlayerViewModel,
+    engine: VlcPlayerEngine?,
+    isInPipMode: Boolean,
     controlsVisible: Boolean,
     onToggleControls: () -> Unit,
     onEnterPip: () -> Unit,
     onAdjustBrightness: (Float) -> Unit,
-    onGetBrightness: () -> Float
+    onGetBrightness: () -> Float,
+    onAdjustVolume: (Float) -> Unit,
+    onGetVolume: () -> Float
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    GestureOverlay(
-        positionMs = state.positionMs,
-        durationMs = state.durationMs,
-        onTapToggleControls = onToggleControls,
-        onSeekCommit = viewModel::seekTo,
-        onGetBrightness = onGetBrightness,
-        onAdjustBrightness = onAdjustBrightness,
-        onGetVolume = viewModel::getVlcVolumeFraction,
-        onAdjustVolume = viewModel::setVlcVolumeFraction
-    )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)
+        VlcVideoSurface(
+            engine = engine,
+            modifier = Modifier.fillMaxSize()
+        )
 
-    FullScreenControls(
-        visible = controlsVisible,
-        state = state,
-        onTogglePlayPause = viewModel::togglePlayPause,
-        onPrev = viewModel::playPrevious,
-        onNext = viewModel::playNext,
-        onSeek = viewModel::seekTo,
-        onCycleMode = viewModel::cyclePlaybackMode,
-        onCycleAspect = viewModel::cycleAspectRatio,
-        onOpenSplitList = { viewModel.setSplitScreen(true) },
-        onEnterPip = onEnterPip
-    )
+        if (!isInPipMode) {
+            GestureOverlay(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                onTapToggleControls = onToggleControls,
+                onSeekCommit = viewModel::seekTo,
+                onGetBrightness = onGetBrightness,
+                onAdjustBrightness = onAdjustBrightness,
+                onGetVolume = onGetVolume,
+                onAdjustVolume = onAdjustVolume
+            )
+
+            FullScreenControls(
+                visible = controlsVisible,
+                state = state,
+                onTogglePlayPause = viewModel::togglePlayPause,
+                onPrev = viewModel::playPrevious,
+                onNext = viewModel::playNext,
+                onSeek = viewModel::seekTo,
+                onCycleMode = viewModel::cyclePlaybackMode,
+                onCycleAspect = viewModel::cycleAspectRatio,
+                onOpenSplitList = { viewModel.setSplitScreen(true) },
+                onEnterPip = onEnterPip
+            )
+        }
+    }
 }
 
 @Composable
-private fun PersistentVlcVideoSurface(
+private fun VlcVideoSurface(
     engine: VlcPlayerEngine?,
     modifier: Modifier = Modifier
 ) {
+    val currentEngine by rememberUpdatedState(engine)
     var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
 
-    // Anexa automaticamente assim que o serviço/engine conectar (sem recriar a View)
+    // Garante anexação imediata assim que o engine conectar ou a View ficar pronta
     LaunchedEffect(engine, videoLayoutRef) {
         val layout = videoLayoutRef
         if (engine != null && layout != null) {
@@ -278,12 +233,12 @@ private fun PersistentVlcVideoSurface(
         }
     }
 
-    // Só desanexa quando a própria Activity/PlayerScreen for destruída
-    DisposableEffect(engine) {
+    // Desanexa com segurança quando esta instância específica da superfície sair de tela
+    DisposableEffect(Unit) {
         onDispose {
             val layout = videoLayoutRef
             if (layout != null) {
-                engine?.detachVideoLayout(layout)
+                currentEngine?.detachVideoLayout(layout)
             }
         }
     }
@@ -295,6 +250,9 @@ private fun PersistentVlcVideoSurface(
                 videoLayoutRef = layout
                 engine?.attachVideoLayout(layout)
             }
+        },
+        update = { layout ->
+            engine?.attachVideoLayout(layout)
         }
     )
 }

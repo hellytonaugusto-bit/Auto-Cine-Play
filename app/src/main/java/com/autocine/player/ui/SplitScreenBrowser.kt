@@ -75,14 +75,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -95,7 +92,10 @@ import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.LocalAutoCinePalette
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.viewmodel.PlayerUiState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -129,35 +129,43 @@ private fun VideoListThumbnail(
 
     LaunchedEffect(item.id) {
         if (bitmap == null && !VideoThumbnailMemoryCache.hasFailed(item.id)) {
+            // Pequeno atraso antes de acessar o Pen Drive: se o usuário rolar rapidamente,
+            // a coroutine é cancelada automaticamente antes de abrir o MediaMetadataRetriever.
+            delay(120L)
             val loaded = withContext(Dispatchers.IO) {
+                ensureActive()
                 VideoThumbnailMemoryCache.decodeSemaphore.withPermit {
+                    ensureActive()
                     VideoThumbnailMemoryCache.get(item.id)?.let { return@withPermit it }
-                    runCatching {
-                        val retriever = MediaMetadataRetriever()
-                        try {
-                            retriever.setDataSource(context, item.uri)
-                            val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                                retriever.getScaledFrameAtTime(
-                                    1_500_000L,
-                                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                                    192,
-                                    108
-                                )
-                            } else {
-                                retriever.getFrameAtTime(
-                                    1_500_000L,
-                                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-                                )?.let { full ->
-                                    val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
-                                    if (scaled != full) full.recycle()
-                                    scaled
-                                }
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, item.uri)
+                        ensureActive()
+                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            retriever.getScaledFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                192,
+                                108
+                            )
+                        } else {
+                            retriever.getFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )?.let { full ->
+                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
+                                if (scaled != full) full.recycle()
+                                scaled
                             }
-                            frame?.asImageBitmap()
-                        } finally {
-                            retriever.release()
                         }
-                    }.getOrNull()
+                        frame?.asImageBitmap()
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (_: Throwable) {
+                        null
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
                 }
             }
             if (loaded != null) {
@@ -230,7 +238,8 @@ fun SplitScreenLeftPane(
     isPlaying: Boolean,
     activeStorageSlot: StorageSlot,
     hasCustomAllFilter: Boolean,
-    onVideoSlotPositioned: (Rect) -> Unit,
+    videoSurface: @Composable () -> Unit,
+    onExpandVideo: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -246,17 +255,17 @@ fun SplitScreenLeftPane(
             .background(Color(0xFF0C1018), RoundedCornerShape(18.dp))
             .padding(12.dp)
     ) {
-        // Espaço reservado 16:9 onde a instância única do VLCVideoLayout é posicionada (sem recriar Surface)
+        // Quadro do vídeo minimizado (toque para expandir instantaneamente para tela cheia)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
                 .clip(RoundedCornerShape(14.dp))
                 .background(Color.Black)
-                .onGloballyPositioned { coords ->
-                    onVideoSlotPositioned(coords.boundsInRoot())
-                }
-        )
+                .clickable { onExpandVideo() }
+        ) {
+            videoSurface()
+        }
 
         Spacer(Modifier.height(12.dp))
 
@@ -741,7 +750,7 @@ fun SplitScreenFileList(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = if (sub.videoCount > 0) "${sub.videoCount} vídeos diretos · Toque para abrir" else "Pasta com subpastas · Toque para abrir",
+                                text = if (sub.videoCount > 0) "${sub.videoCount} vídeos · Toque para abrir" else "Pasta · Toque para abrir",
                                 color = Color(0xFF94A3B8),
                                 fontSize = 13.sp
                             )

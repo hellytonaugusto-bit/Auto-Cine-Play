@@ -16,15 +16,12 @@ import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 import kotlin.random.Random
 
 data class PlayerUiState(
@@ -45,7 +42,6 @@ data class PlayerUiState(
     val isSettingsOpen: Boolean = false,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
-    val vlcVolumePercent: Int = 100,
     val allVideos: List<VideoFileItem> = emptyList(),
     val browsedVideos: List<VideoFileItem> = emptyList(),
     val visibleVideos: List<VideoFileItem> = emptyList(),
@@ -75,7 +71,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var savedResumeVideoId: String = ""
     private var savedResumePositionMs: Long = 0L
     private var lastPositionSavedElapsedMs: Long = 0L
-    private var volumeSaveJob: Job? = null
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -103,23 +98,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     aspectRatio = saved.aspectRatio,
                     sortOrder = saved.sortOrder,
                     uiScaleLevel = saved.uiScaleLevel,
-                    colorTheme = saved.colorTheme,
-                    vlcVolumePercent = saved.vlcVolumePercent
+                    colorTheme = saved.colorTheme
                 )
             }
-            service?.engine?.setBaseVolume(saved.vlcVolumePercent)
             service?.engine?.applyAspectRatio(saved.aspectRatio)
 
             if (saved.playAllFolders) {
-                loadAllFolders(saved.folderUri, savedSelection, saved.lastVideoId)
+                loadAllFolders(saved.folderUri, savedSelection, saved.lastVideoId, forceRefresh = false)
             } else if (saved.folderUri.isNotEmpty()) {
                 loadDirectory(
                     uriString = saved.folderUri,
                     rootName = saved.folderDisplayName,
                     slot = saved.activeStorageSlot,
                     relativePath = emptyList(),
+                    knownDocumentId = null,
                     autoResumeVideoId = saved.lastVideoId,
-                    replaceActiveQueue = true
+                    replaceActiveQueue = true,
+                    forceRefresh = false
                 )
             }
         }
@@ -128,7 +123,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun bindService(playbackService: VideoPlaybackService) {
         service = playbackService
         val engine = playbackService.engine
-        engine.setBaseVolume(_uiState.value.vlcVolumePercent)
         engine.applyAspectRatio(_uiState.value.aspectRatio)
 
         engine.onPlayingChanged = { playing ->
@@ -188,24 +182,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun getVlcVolumeFraction(): Float {
-        val live = service?.engine?.getBaseVolume() ?: _uiState.value.vlcVolumePercent
-        return (live.coerceIn(0, 100)) / 100f
-    }
-
-    fun setVlcVolumeFraction(fraction: Float) {
-        val percent = (fraction.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
-        service?.engine?.setBaseVolume(percent)
-        if (_uiState.value.vlcVolumePercent != percent) {
-            _uiState.update { it.copy(vlcVolumePercent = percent) }
-        }
-        volumeSaveJob?.cancel()
-        volumeSaveJob = viewModelScope.launch {
-            delay(250L)
-            prefs.saveVlcVolumePercent(percent)
-        }
-    }
-
     fun onFolderSelected(uriString: String, displayName: String, slot: StorageSlot = StorageSlot.USB) {
         viewModelScope.launch {
             prefs.saveFolder(uriString, displayName, slot)
@@ -221,8 +197,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 rootName = displayName,
                 slot = slot,
                 relativePath = emptyList(),
+                knownDocumentId = null,
                 autoResumeVideoId = "",
-                replaceActiveQueue = _uiState.value.currentVideo == null
+                replaceActiveQueue = _uiState.value.currentVideo == null,
+                forceRefresh = false
             )
         }
     }
@@ -240,8 +218,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             rootName = state.usbFolderName,
                             slot = StorageSlot.USB,
                             relativePath = emptyList(),
+                            knownDocumentId = null,
                             autoResumeVideoId = "",
-                            replaceActiveQueue = state.currentVideo == null
+                            replaceActiveQueue = state.currentVideo == null,
+                            forceRefresh = false
                         )
                     }
                 } else {
@@ -257,8 +237,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             rootName = state.sdFolderName,
                             slot = StorageSlot.SD_CARD,
                             relativePath = emptyList(),
+                            knownDocumentId = null,
                             autoResumeVideoId = "",
-                            replaceActiveQueue = state.currentVideo == null
+                            replaceActiveQueue = state.currentVideo == null,
+                            forceRefresh = false
                         )
                     }
                 } else {
@@ -276,8 +258,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             rootName = "Memória Interna",
                             slot = StorageSlot.INTERNAL,
                             relativePath = emptyList(),
+                            knownDocumentId = null,
                             autoResumeVideoId = "",
-                            replaceActiveQueue = state.currentVideo == null
+                            replaceActiveQueue = state.currentVideo == null,
+                            forceRefresh = false
                         )
                     }
                 } else {
@@ -288,19 +272,34 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /**
-     * Entra em uma subpasta sem interromper o vídeo que já está tocando no Mini-Player.
+     * Entra em uma subpasta instantaneamente usando cache em memória quando disponível (0 ms),
+     * sem interromper o vídeo que está tocando no Mini-Player.
      */
     fun openSubfolder(entry: FolderEntry) {
         val state = _uiState.value
         if (state.folderUri.isEmpty()) return
+        val cached = repository.getCachedDirectoryEntries(state.folderUri, entry.relativePath)
+        if (cached != null) {
+            applyInstantDirectorySnapshot(
+                uriString = state.folderUri,
+                rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
+                relativePath = entry.relativePath,
+                subfolders = cached.subfolders,
+                videos = cached.videos
+            )
+            return
+        }
         viewModelScope.launch {
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
                 slot = state.activeStorageSlot,
                 relativePath = entry.relativePath,
+                knownDocumentId = entry.documentId.ifBlank { null },
                 autoResumeVideoId = "",
-                replaceActiveQueue = false
+                replaceActiveQueue = false,
+                forceRefresh = false
             )
         }
     }
@@ -309,14 +308,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val state = _uiState.value
         if (state.folderBreadcrumbs.isEmpty() || state.folderUri.isEmpty()) return
         val parentPath = state.folderBreadcrumbs.dropLast(1)
+        val cached = repository.getCachedDirectoryEntries(state.folderUri, parentPath)
+        if (cached != null) {
+            applyInstantDirectorySnapshot(
+                uriString = state.folderUri,
+                rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
+                relativePath = parentPath,
+                subfolders = cached.subfolders,
+                videos = cached.videos
+            )
+            return
+        }
         viewModelScope.launch {
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
                 slot = state.activeStorageSlot,
                 relativePath = parentPath,
+                knownDocumentId = null,
                 autoResumeVideoId = "",
-                replaceActiveQueue = false
+                replaceActiveQueue = false,
+                forceRefresh = false
             )
         }
     }
@@ -325,23 +338,79 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val state = _uiState.value
         if (state.folderUri.isEmpty()) return
         val targetPath = if (index < 0) emptyList() else state.folderBreadcrumbs.take(index + 1)
+        val cached = repository.getCachedDirectoryEntries(state.folderUri, targetPath)
+        if (cached != null) {
+            applyInstantDirectorySnapshot(
+                uriString = state.folderUri,
+                rootName = state.rootFolderName,
+                slot = state.activeStorageSlot,
+                relativePath = targetPath,
+                subfolders = cached.subfolders,
+                videos = cached.videos
+            )
+            return
+        }
         viewModelScope.launch {
             loadDirectory(
                 uriString = state.folderUri,
                 rootName = state.rootFolderName,
                 slot = state.activeStorageSlot,
                 relativePath = targetPath,
+                knownDocumentId = null,
                 autoResumeVideoId = "",
-                replaceActiveQueue = false
+                replaceActiveQueue = false,
+                forceRefresh = false
+            )
+        }
+    }
+
+    private fun applyInstantDirectorySnapshot(
+        uriString: String,
+        rootName: String,
+        slot: StorageSlot,
+        relativePath: List<String>,
+        subfolders: List<FolderEntry>,
+        videos: List<VideoFileItem>
+    ) {
+        val displayTitle = relativePath.lastOrNull() ?: rootName
+        val state = _uiState.value
+        val sorted = StorageRepository.sortItems(videos, state.sortOrder)
+        val filtered = StorageRepository.filterBySubstring(sorted, state.searchQuery)
+        _uiState.update {
+            it.copy(
+                isScanning = false,
+                isAllFoldersMode = false,
+                activeStorageSlot = slot,
+                folderUri = uriString,
+                rootFolderName = rootName,
+                folderName = displayTitle,
+                folderBreadcrumbs = relativePath,
+                currentSubfolders = subfolders,
+                browsedVideos = sorted,
+                visibleVideos = filtered
             )
         }
     }
 
     fun enableAllFoldersMode() {
         val state = _uiState.value
+        val cached = repository.getCachedAllFolders(state.folderUri, state.selectedAllFolderIds)
         viewModelScope.launch {
             prefs.savePlayAllFolders(true)
-            loadAllFolders(state.folderUri, state.selectedAllFolderIds, state.currentVideo?.id.orEmpty())
+            if (cached != null) {
+                _uiState.update {
+                    it.copy(
+                        isAllFoldersMode = true,
+                        activeStorageSlot = StorageSlot.ALL,
+                        folderBreadcrumbs = emptyList(),
+                        currentSubfolders = emptyList(),
+                        folderName = "Todas as Pastas"
+                    )
+                }
+                applyLoadedPlaylist(cached, state.currentVideo?.id.orEmpty(), replaceActiveQueue = true)
+            } else {
+                loadAllFolders(state.folderUri, state.selectedAllFolderIds, state.currentVideo?.id.orEmpty(), forceRefresh = false)
+            }
         }
     }
 
@@ -373,7 +442,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     isAllFilterDialogOpen = false
                 )
             }
-            loadAllFolders(state.folderUri, selectedIds, state.currentVideo?.id.orEmpty())
+            loadAllFolders(state.folderUri, selectedIds, state.currentVideo?.id.orEmpty(), forceRefresh = false)
         }
     }
 
@@ -395,19 +464,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { prefs.saveColorTheme(theme) }
     }
 
+    /**
+     * Único ponto onde o cache em memória é invalidado para reescanear o Pen Drive / armazenamento.
+     */
     fun refreshCurrentFolder() {
         val state = _uiState.value
+        repository.invalidateAllCaches()
         viewModelScope.launch {
             if (state.isAllFoldersMode) {
-                loadAllFolders(state.folderUri, state.selectedAllFolderIds, state.currentVideo?.id.orEmpty())
+                loadAllFolders(state.folderUri, state.selectedAllFolderIds, state.currentVideo?.id.orEmpty(), forceRefresh = true)
             } else if (state.folderUri.isNotEmpty()) {
                 loadDirectory(
                     uriString = state.folderUri,
                     rootName = state.rootFolderName,
                     slot = state.activeStorageSlot,
                     relativePath = state.folderBreadcrumbs,
+                    knownDocumentId = null,
                     autoResumeVideoId = state.currentVideo?.id.orEmpty(),
-                    replaceActiveQueue = false
+                    replaceActiveQueue = false,
+                    forceRefresh = true
                 )
             }
         }
@@ -416,7 +491,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun loadAllFolders(
         savedFolderUri: String,
         selectedFolderIds: Set<String>?,
-        autoResumeVideoId: String
+        autoResumeVideoId: String,
+        forceRefresh: Boolean
     ) {
         _uiState.update {
             it.copy(
@@ -428,7 +504,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 folderName = "Todas as Pastas"
             )
         }
-        val scanned = repository.scanAllFoldersCombined(savedFolderUri, selectedFolderIds)
+        val scanned = repository.scanAllFoldersCombined(savedFolderUri, selectedFolderIds, forceRefresh = forceRefresh)
         applyLoadedPlaylist(scanned, autoResumeVideoId, replaceActiveQueue = true)
     }
 
@@ -437,8 +513,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         rootName: String,
         slot: StorageSlot,
         relativePath: List<String>,
+        knownDocumentId: String?,
         autoResumeVideoId: String,
-        replaceActiveQueue: Boolean
+        replaceActiveQueue: Boolean,
+        forceRefresh: Boolean
     ) {
         val displayTitle = relativePath.lastOrNull() ?: rootName
         _uiState.update {
@@ -452,7 +530,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 folderBreadcrumbs = relativePath
             )
         }
-        val snapshot = repository.scanDirectoryEntries(uriString, relativePath)
+        val snapshot = repository.scanDirectoryEntries(
+            rootUriString = uriString,
+            relativePath = relativePath,
+            knownDocumentId = knownDocumentId,
+            forceRefresh = forceRefresh
+        )
         _uiState.update { it.copy(currentSubfolders = snapshot.subfolders) }
         applyLoadedPlaylist(snapshot.videos, autoResumeVideoId, replaceActiveQueue = replaceActiveQueue)
     }
@@ -537,7 +620,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val idx = currentBrowsed.indexOfFirst { it.id == item.id }
             _uiState.update { it.copy(allVideos = currentBrowsed, currentIndexInFolder = idx) }
         }
-        // Se tocou no mesmo vídeo que já está carregado, continua de onde está; se é outro, inicia do 00:00
         val isSameRunning = service?.engine?.hasActiveMediaFor(item.uri) == true
         playVideo(item, resumePositionMs = 0L, forceRestart = !isSameRunning)
     }
@@ -578,7 +660,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update {
             it.copy(currentVideo = item, currentIndexInFolder = idx, positionMs = resumePositionMs)
         }
-        svc.engine.setBaseVolume(_uiState.value.vlcVolumePercent)
         svc.engine.applyAspectRatio(_uiState.value.aspectRatio)
         svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = forceRestart)
         svc.updateNotification(item.name, true)
@@ -698,12 +779,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setSplitScreen(enabled: Boolean) {
         _uiState.update { it.copy(isSplitScreen = enabled) }
-        service?.engine?.reapplyAspectRatio()
     }
 
     fun setInPipMode(inPip: Boolean) {
         _uiState.update { it.copy(isInPipMode = inPip, isSplitScreen = if (inPip) false else it.isSplitScreen) }
-        service?.engine?.reapplyAspectRatio()
     }
 
     fun requestDelete(item: VideoFileItem) {

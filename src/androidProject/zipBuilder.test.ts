@@ -78,16 +78,17 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(themeKt, /enum class AppColorTheme/);
   assert.match(themeKt, /LocalDensity provides/);
 
-  // Requirement: Clean scrollable left pane, SettingsDialog, LruCache thumbnails, and Limpar search button
+  // Requirement: Clean scrollable left pane, SettingsDialog, LruCache cancellable thumbnails, and Limpar search button
   const splitKt = byPath.get('app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt');
   assert.ok(splitKt, 'SplitScreenBrowser.kt must exist');
   assert.match(splitKt, /verticalScroll/);
   assert.match(splitKt, /fun SettingsDialog/);
   assert.match(splitKt, /LruCache/);
   assert.match(splitKt, /Dispatchers\.IO/);
+  assert.match(splitKt, /ensureActive/);
   assert.match(splitKt, /text = "Limpar"/);
 
-  // Requirement: libVLC ScaleTypes, scale reset, internal setVolume, and active-media guard
+  // Requirement: libVLC ScaleTypes, scale reset, fixed volume 100, and active-media guard
   const vlcKt = byPath.get('app/src/main/java/com/autocine/player/vlc/VlcPlayerEngine.kt');
   assert.ok(vlcKt, 'VlcPlayerEngine.kt must exist');
   assert.match(vlcKt, /player\.scale = 0f/);
@@ -96,15 +97,28 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(vlcKt, /SURFACE_FILL/);
   assert.match(vlcKt, /SURFACE_16_9/);
   assert.match(vlcKt, /SURFACE_4_3/);
-  assert.match(vlcKt, /setVolume\(effective\)/);
+  assert.match(vlcKt, /FIXED_VLC_VOLUME = 100/);
   assert.match(vlcKt, /hasActiveMediaFor/);
 
-  // Requirement: Single persistent VLCVideoLayout in PlayerScreen (no detach/recreate on mini<->fullscreen)
+  // Requirement: Proven VlcVideoSurface hosting in PlayerScreen (no black screen)
   const playerScreenKt = byPath.get('app/src/main/java/com/autocine/player/ui/PlayerScreen.kt');
   assert.ok(playerScreenKt, 'PlayerScreen.kt must exist');
-  assert.match(playerScreenKt, /PersistentVlcVideoSurface/);
-  assert.match(playerScreenKt, /BoxWithConstraints/);
-  assert.match(playerScreenKt, /setVlcVolumeFraction/);
+  assert.match(playerScreenKt, /fun VlcVideoSurface/);
+  assert.match(playerScreenKt, /onAdjustVolume = onAdjustVolume/);
+
+  // Requirement: Real AudioManager volume with FLAG_SHOW_UI in MainActivity
+  const mainActivityKt = byPath.get('app/src/main/java/com/autocine/player/MainActivity.kt');
+  assert.ok(mainActivityKt, 'MainActivity.kt must exist');
+  assert.match(mainActivityKt, /AudioManager\.FLAG_SHOW_UI/);
+  assert.match(mainActivityKt, /setStreamVolume/);
+  assert.match(mainActivityKt, /adjustStreamVolume/);
+
+  // Requirement: In-memory directory cache + fast physical/DocumentsContract listing in StorageRepository
+  const storageRepoKt = byPath.get('app/src/main/java/com/autocine/player/data/StorageRepository.kt');
+  assert.ok(storageRepoKt, 'StorageRepository.kt must exist');
+  assert.match(storageRepoKt, /directoryCache/);
+  assert.match(storageRepoKt, /DocumentsContract\.buildChildDocumentsUriUsingTree/);
+  assert.match(storageRepoKt, /tryResolvePhysicalDirectory/);
 
   // Regression check: Kotlin forbids destructuring declarations using `by` delegation
   for (const file of ANDROID_PROJECT_FILES) {

@@ -5,7 +5,6 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
-import android.view.View
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -26,13 +25,17 @@ enum class AspectRatioOption(val label: String) {
 
 class VlcPlayerEngine(private val context: Context) {
 
+    companion object {
+        // Volume interno da libVLC sempre travado em 100% para não conflitar com o volume geral da multimídia
+        private const val FIXED_VLC_VOLUME = 100
+    }
+
     private val mainHandler = Handler(Looper.getMainLooper())
     private var libVlc: LibVLC? = null
     private var mediaPlayer: MediaPlayer? = null
     private var currentPfd: ParcelFileDescriptor? = null
     private var attachedLayout: VLCVideoLayout? = null
 
-    private var baseVolumePercent: Int = 100
     private var duckMultiplier: Float = 1f
     private var currentAspectRatio: AspectRatioOption = AspectRatioOption.FIT
 
@@ -46,13 +49,6 @@ class VlcPlayerEngine(private val context: Context) {
 
     @Volatile
     private var pendingSeekPositionMs: Long = 0L
-
-    private val layoutChangeListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
-        val sizeChanged = (right - left) != (oldRight - oldLeft) || (bottom - top) != (oldBottom - oldTop)
-        if (sizeChanged && (right - left) > 0 && (bottom - top) > 0) {
-            mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
-        }
-    }
 
     var onTimeChanged: ((positionMs: Long, durationMs: Long) -> Unit)? = null
     var onPlayingChanged: ((isPlaying: Boolean) -> Unit)? = null
@@ -78,6 +74,7 @@ class VlcPlayerEngine(private val context: Context) {
         )
         libVlc = LibVLC(context.applicationContext, options)
         mediaPlayer = MediaPlayer(libVlc).apply {
+            volume = FIXED_VLC_VOLUME
             setEventListener { event ->
                 when (event.type) {
                     MediaPlayer.Event.Playing -> {
@@ -117,33 +114,27 @@ class VlcPlayerEngine(private val context: Context) {
     }
 
     /**
-     * Anexa a superfície persistente de vídeo sem interromper nem reiniciar a reprodução.
+     * Anexa a superfície de vídeo (Tela Cheia, Mini-Player ou PiP) sem interromper nem reiniciar o vídeo.
      */
     fun attachVideoLayout(layout: VLCVideoLayout) {
         val player = mediaPlayer ?: return
-        if (attachedLayout === layout) {
-            mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
-            return
-        }
-        attachedLayout?.removeOnLayoutChangeListener(layoutChangeListener)
+        if (attachedLayout === layout) return
         if (attachedLayout != null) {
             player.detachViews()
         }
         attachedLayout = layout
-        layout.addOnLayoutChangeListener(layoutChangeListener)
         player.attachViews(layout, null, false, false)
-        mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
+        applyAspectRatioInternal(currentAspectRatio)
     }
 
     /**
-     * Desanexa apenas a View visual quando a Activity é realmente destruída, mantendo o áudio rodando no serviço.
+     * Desanexa apenas a View visual ao trocar de tela ou ir para segundo plano, mantendo áudio e posição intactos.
      */
     fun detachVideoLayout(layout: VLCVideoLayout) {
         val player = mediaPlayer ?: return
         if (attachedLayout === layout) {
             val pos = player.time.coerceAtLeast(0L)
             if (pos > 0L) lastKnownPositionMs = pos
-            layout.removeOnLayoutChangeListener(layoutChangeListener)
             player.detachViews()
             attachedLayout = null
         }
@@ -159,7 +150,7 @@ class VlcPlayerEngine(private val context: Context) {
 
     /**
      * Carrega e reproduz uma URI. Se a mesma mídia já estiver ativa e forceRestart == false,
-     * não recarrega nem reinicia do 00:00 — apenas garante volume, proporção e continuidade.
+     * nunca recarrega nem reinicia do 00:00 — apenas garante volume em 100%, proporção e continuidade.
      */
     fun playUri(uri: Uri, startPositionMs: Long = 0L, forceRestart: Boolean = false) {
         val vlc = libVlc ?: return
@@ -248,25 +239,26 @@ class VlcPlayerEngine(private val context: Context) {
         applyEffectiveVolume()
     }
 
-    fun setBaseVolume(percent: Int) {
-        baseVolumePercent = percent.coerceIn(0, 100)
-        applyEffectiveVolume()
-    }
-
-    fun getBaseVolume(): Int = baseVolumePercent
-
     private fun applyEffectiveVolume() {
-        val effective = (baseVolumePercent * duckMultiplier).toInt().coerceIn(0, 100)
-        mediaPlayer?.setVolume(effective)
+        val effective = (FIXED_VLC_VOLUME * duckMultiplier).toInt().coerceIn(0, FIXED_VLC_VOLUME)
+        mediaPlayer?.volume = effective
     }
 
     fun applyAspectRatio(option: AspectRatioOption) {
         currentAspectRatio = option
-        mainHandler.post { applyAspectRatioInternal(option) }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            applyAspectRatioInternal(option)
+        } else {
+            mainHandler.post { applyAspectRatioInternal(option) }
+        }
     }
 
     fun reapplyAspectRatio() {
-        mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            applyAspectRatioInternal(currentAspectRatio)
+        } else {
+            mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
+        }
     }
 
     private fun applyAspectRatioInternal(option: AspectRatioOption) {
@@ -293,7 +285,6 @@ class VlcPlayerEngine(private val context: Context) {
                 player.videoScale = MediaPlayer.ScaleType.SURFACE_4_3
             }
         }
-        attachedLayout?.requestLayout()
     }
 
     private fun closeActiveDescriptor() {
@@ -302,7 +293,6 @@ class VlcPlayerEngine(private val context: Context) {
     }
 
     fun release() {
-        attachedLayout?.removeOnLayoutChangeListener(layoutChangeListener)
         mediaPlayer?.stop()
         mediaPlayer?.detachViews()
         mediaPlayer?.release()

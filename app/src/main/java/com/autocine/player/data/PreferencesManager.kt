@@ -3,7 +3,6 @@ package com.autocine.player.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -44,7 +43,6 @@ data class SavedPlayerPrefs(
     val selectedAllFolderIds: Set<String> = emptySet(),
     val lastVideoId: String = "",
     val lastPositionMs: Long = 0L,
-    val vlcVolumePercent: Int = 100,
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val aspectRatio: AspectRatioOption = AspectRatioOption.FIT,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
@@ -67,7 +65,6 @@ class PreferencesManager(private val context: Context) {
         val SELECTED_ALL_FOLDERS = stringSetPreferencesKey("selected_all_folders")
         val LAST_VIDEO_ID = stringPreferencesKey("last_video_id")
         val LAST_POSITION_MS = longPreferencesKey("last_position_ms")
-        val VLC_VOLUME_PERCENT = intPreferencesKey("vlc_volume_percent")
         val PLAYBACK_MODE = stringPreferencesKey("playback_mode")
         val ASPECT_RATIO = stringPreferencesKey("aspect_ratio")
         val SORT_ORDER = stringPreferencesKey("sort_order")
@@ -91,7 +88,6 @@ class PreferencesManager(private val context: Context) {
             selectedAllFolderIds = prefs[Keys.SELECTED_ALL_FOLDERS] ?: emptySet(),
             lastVideoId = prefs[Keys.LAST_VIDEO_ID].orEmpty(),
             lastPositionMs = (prefs[Keys.LAST_POSITION_MS] ?: 0L).coerceAtLeast(0L),
-            vlcVolumePercent = (prefs[Keys.VLC_VOLUME_PERCENT] ?: 100).coerceIn(0, 100),
             playbackMode = prefs[Keys.PLAYBACK_MODE]
                 ?.let { runCatching { PlaybackMode.valueOf(it) }.getOrNull() }
                 ?: PlaybackMode.SEQUENTIAL,
@@ -157,10 +153,6 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun saveLastPositionMs(positionMs: Long) {
         context.dataStore.edit { it[Keys.LAST_POSITION_MS] = positionMs.coerceAtLeast(0L) }
-    }
-
-    suspend fun saveVlcVolumePercent(percent: Int) {
-        context.dataStore.edit { it[Keys.VLC_VOLUME_PERCENT] = percent.coerceIn(0, 100) }
     }
 
     suspend fun savePlaybackMode(mode: PlaybackMode) {
