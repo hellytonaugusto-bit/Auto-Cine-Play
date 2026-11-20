@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Outfit', system-ui, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background-color: #07090d;
+    font-family: var(--font-sans);
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-code {
+  font-family: var(--font-mono);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Custom sleek automotive scrollbar */
+.auto-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.auto-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 20, 28, 0.6);
+}
+
+.auto-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+.auto-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* Range input styled for large automotive touch dragging */
+input[type='range'].auto-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range'].auto-scrubber::-webkit-slider-runnable-track {
+  height: 12px;
+  border-radius: 9999px;
+}
+
+input[type='range'].auto-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 30px;
+  width: 30px;
+  border-radius: 9999px;
+  background: #ffffff;
+  border: 4px solid #38bdf8;
+  margin-top: -9px;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.65);
+  transition: transform 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+input[type='range'].auto-scrubber:hover::-webkit-slider-thumb,
+input[type='range'].auto-scrubber:active::-webkit-slider-thumb {
+  transform: scale(1.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

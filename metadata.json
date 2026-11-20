@@ -1,0 +1,8 @@
+{
+  "name": "AutoCine Player — Central Multimídia Android",
+  "description": "Reprodutor de vídeo automotivo nativo em Kotlin (Jetpack Compose + libVLC) com modo tela cheia, mini-player lateral, Picture-in-Picture, gestos de brilho/volume/avanço e exportação pronta para compilar no Android 15+.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
