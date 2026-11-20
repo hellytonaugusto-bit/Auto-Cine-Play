@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.autocine.player.data.StorageSlot
+import com.autocine.player.data.VolumeGestureMode
 import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
 import kotlinx.coroutines.delay
@@ -34,9 +35,7 @@ fun PlayerScreen(
     onEnterPip: () -> Unit,
     onPickFolderForSlot: (StorageSlot) -> Unit,
     onAdjustBrightness: (Float) -> Unit,
-    onGetBrightness: () -> Float,
-    onAdjustVolume: (Float) -> Unit,
-    onGetVolume: () -> Float
+    onGetBrightness: () -> Float
 ) {
     // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn
     // NÃO recomponham a cada tick de progresso do vídeo em hardware modesto.
@@ -85,9 +84,7 @@ fun PlayerScreen(
                 onToggleControls = { controlsVisible = !controlsVisible },
                 onEnterPip = onEnterPip,
                 onAdjustBrightness = onAdjustBrightness,
-                onGetBrightness = onGetBrightness,
-                onAdjustVolume = onAdjustVolume,
-                onGetVolume = onGetVolume
+                onGetBrightness = onGetBrightness
             )
         }
     }
@@ -154,6 +151,7 @@ private fun SplitScreenContent(
             onDismissSettings = viewModel::closeSettings,
             onSelectUiScale = viewModel::setUiScaleLevel,
             onSelectColorTheme = viewModel::setColorTheme,
+            onSelectVolumeGestureMode = viewModel::setVolumeGestureMode,
             onSearchChange = viewModel::updateSearchQuery,
             onRefresh = viewModel::refreshCurrentFolder,
             onCycleSort = viewModel::cycleSortOrder,
@@ -176,9 +174,7 @@ private fun FullscreenContent(
     onToggleControls: () -> Unit,
     onEnterPip: () -> Unit,
     onAdjustBrightness: (Float) -> Unit,
-    onGetBrightness: () -> Float,
-    onAdjustVolume: (Float) -> Unit,
-    onGetVolume: () -> Float
+    onGetBrightness: () -> Float
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -197,8 +193,9 @@ private fun FullscreenContent(
                 onSeekCommit = viewModel::seekTo,
                 onGetBrightness = onGetBrightness,
                 onAdjustBrightness = onAdjustBrightness,
-                onGetVolume = onGetVolume,
-                onAdjustVolume = onAdjustVolume
+                onGetVolume = viewModel::getInternalVolumeFraction,
+                onAdjustVolume = viewModel::setInternalVolumeFraction,
+                volumeGestureEnabled = state.volumeGestureMode == VolumeGestureMode.APP_INTERNAL
             )
 
             FullScreenControls(

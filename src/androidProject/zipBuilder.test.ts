@@ -60,12 +60,13 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(manifest, /android:icon="@mipmap\/ic_launcher"/);
   assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
 
-  // Requirement: Gesture overlay with seek, brightness, volume & non-freezing pointerInput(Unit)
+  // Requirement: Gesture overlay with seek, brightness, optional volume & non-freezing pointerInput(Unit)
   const gestureKt = byPath.get('app/src/main/java/com/autocine/player/ui/GestureOverlay.kt');
   assert.ok(gestureKt, 'GestureOverlay.kt must exist');
   assert.match(gestureKt, /GestureAxis\.SEEK/);
   assert.match(gestureKt, /GestureAxis\.BRIGHTNESS/);
   assert.match(gestureKt, /GestureAxis\.VOLUME/);
+  assert.match(gestureKt, /volumeGestureEnabled/);
   assert.match(gestureKt, /pointerInput\(Unit\)/);
   assert.match(gestureKt, /rememberUpdatedState/);
 
@@ -78,19 +79,26 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(themeKt, /enum class AppColorTheme/);
   assert.match(themeKt, /LocalDensity provides/);
 
-  // Requirement: Clean scrollable left pane, SettingsDialog, LruCache cancellable thumbnails, and Limpar search button
+  // Requirement: Clean scrollable left pane, SettingsDialog with Volume Gesture, collapsed AllFoldersFilterDialog, LruCache thumbnails
   const splitKt = byPath.get('app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt');
   assert.ok(splitKt, 'SplitScreenBrowser.kt must exist');
   assert.match(splitKt, /verticalScroll/);
   assert.match(splitKt, /fun SettingsDialog/);
+  assert.match(splitKt, /Gesto de Volume na Tela/);
+  assert.match(splitKt, /expandedGroups by remember\(folders\) \{ mutableStateOf\(emptySet<String>\(\)\) \}/);
+  assert.match(splitKt, /expandedFolderIds by remember\(folders\) \{ mutableStateOf\(emptySet<String>\(\)\) \}/);
   assert.match(splitKt, /LruCache/);
   assert.match(splitKt, /Dispatchers\.IO/);
   assert.match(splitKt, /ensureActive/);
   assert.match(splitKt, /text = "Limpar"/);
 
-  // Requirement: libVLC ScaleTypes, scale reset, fixed volume 100, and active-media guard
+  // Requirement: libVLC ScaleTypes, stop before new Media, HW decoder fallback, Vout updateVideoSurfaces, fixed volume 100 default + optional internal volume
   const vlcKt = byPath.get('app/src/main/java/com/autocine/player/vlc/VlcPlayerEngine.kt');
   assert.ok(vlcKt, 'VlcPlayerEngine.kt must exist');
+  assert.match(vlcKt, /player\.stop\(\)/);
+  assert.match(vlcKt, /media\.setHWDecoderEnabled\(true, false\)/);
+  assert.match(vlcKt, /event\.voutCount > 0/);
+  assert.match(vlcKt, /updateVideoSurfaces\(\)/);
   assert.match(vlcKt, /player\.scale = 0f/);
   assert.match(vlcKt, /SURFACE_BEST_FIT/);
   assert.match(vlcKt, /SURFACE_FIT_SCREEN/);
@@ -98,20 +106,21 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(vlcKt, /SURFACE_16_9/);
   assert.match(vlcKt, /SURFACE_4_3/);
   assert.match(vlcKt, /FIXED_VLC_VOLUME = 100/);
+  assert.match(vlcKt, /setVolume\(effective\)/);
   assert.match(vlcKt, /hasActiveMediaFor/);
 
-  // Requirement: Proven VlcVideoSurface hosting in PlayerScreen (no black screen)
+  // Requirement: Proven VlcVideoSurface hosting in PlayerScreen (untouched) + VolumeGestureMode wiring
   const playerScreenKt = byPath.get('app/src/main/java/com/autocine/player/ui/PlayerScreen.kt');
   assert.ok(playerScreenKt, 'PlayerScreen.kt must exist');
   assert.match(playerScreenKt, /fun VlcVideoSurface/);
-  assert.match(playerScreenKt, /onAdjustVolume = onAdjustVolume/);
+  assert.match(playerScreenKt, /volumeGestureEnabled = state\.volumeGestureMode == VolumeGestureMode\.APP_INTERNAL/);
 
-  // Requirement: Real AudioManager volume with FLAG_SHOW_UI in MainActivity
-  const mainActivityKt = byPath.get('app/src/main/java/com/autocine/player/MainActivity.kt');
-  assert.ok(mainActivityKt, 'MainActivity.kt must exist');
-  assert.match(mainActivityKt, /AudioManager\.FLAG_SHOW_UI/);
-  assert.match(mainActivityKt, /setStreamVolume/);
-  assert.match(mainActivityKt, /adjustStreamVolume/);
+  // Requirement: VolumeGestureMode persisted in PreferencesManager with DISABLED default
+  const prefsKt = byPath.get('app/src/main/java/com/autocine/player/data/PreferencesManager.kt');
+  assert.ok(prefsKt, 'PreferencesManager.kt must exist');
+  assert.match(prefsKt, /enum class VolumeGestureMode/);
+  assert.match(prefsKt, /DISABLED\("Desativado"\)/);
+  assert.match(prefsKt, /APP_INTERNAL\("Interno do App"\)/);
 
   // Requirement: In-memory directory cache + fast physical/DocumentsContract listing in StorageRepository
   const storageRepoKt = byPath.get('app/src/main/java/com/autocine/player/data/StorageRepository.kt');

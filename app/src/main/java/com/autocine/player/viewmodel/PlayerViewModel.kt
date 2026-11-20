@@ -12,6 +12,7 @@ import com.autocine.player.data.SortOrder
 import com.autocine.player.data.StorageRepository
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
+import com.autocine.player.data.VolumeGestureMode
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
@@ -42,6 +43,8 @@ data class PlayerUiState(
     val isSettingsOpen: Boolean = false,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
+    val volumeGestureMode: VolumeGestureMode = VolumeGestureMode.DISABLED,
+    val internalVolumePercent: Int = 100,
     val allVideos: List<VideoFileItem> = emptyList(),
     val browsedVideos: List<VideoFileItem> = emptyList(),
     val visibleVideos: List<VideoFileItem> = emptyList(),
@@ -98,13 +101,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     aspectRatio = saved.aspectRatio,
                     sortOrder = saved.sortOrder,
                     uiScaleLevel = saved.uiScaleLevel,
-                    colorTheme = saved.colorTheme
+                    colorTheme = saved.colorTheme,
+                    volumeGestureMode = saved.volumeGestureMode,
+                    internalVolumePercent = saved.vlcInternalVolumePercent
                 )
             }
-            service?.engine?.applyAspectRatio(saved.aspectRatio)
+            service?.engine?.apply {
+                applyAspectRatio(saved.aspectRatio)
+                setInternalVolumeEnabled(saved.volumeGestureMode == VolumeGestureMode.APP_INTERNAL)
+                setInternalVolume(saved.vlcInternalVolumePercent)
+            }
 
             if (saved.playAllFolders) {
-                loadAllFolders(saved.folderUri, savedSelection, saved.lastVideoId, forceRefresh = false)
+                loadAllFolders(
+                    savedFolderUri = saved.folderUri,
+                    selectedFolderIds = savedSelection,
+                    autoResumeVideoId = saved.lastVideoId,
+                    forceRefresh = false
+                )
             } else if (saved.folderUri.isNotEmpty()) {
                 loadDirectory(
                     uriString = saved.folderUri,
@@ -123,7 +137,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun bindService(playbackService: VideoPlaybackService) {
         service = playbackService
         val engine = playbackService.engine
-        engine.applyAspectRatio(_uiState.value.aspectRatio)
+        val currentState = _uiState.value
+        engine.applyAspectRatio(currentState.aspectRatio)
+        engine.setInternalVolumeEnabled(currentState.volumeGestureMode == VolumeGestureMode.APP_INTERNAL)
+        engine.setInternalVolume(currentState.internalVolumePercent)
 
         engine.onPlayingChanged = { playing ->
             _uiState.update { it.copy(isPlaying = playing) }
@@ -394,7 +411,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun enableAllFoldersMode() {
         val state = _uiState.value
-        val cached = repository.getCachedAllFolders(state.folderUri, state.selectedAllFolderIds)
+        val cached = repository.getCachedAllFolders(
+            savedFolderUri = state.folderUri,
+            selectedFolderIds = state.selectedAllFolderIds,
+            usbFolderUri = state.usbFolderUri,
+            sdFolderUri = state.sdFolderUri
+        )
         viewModelScope.launch {
             prefs.savePlayAllFolders(true)
             if (cached != null) {
@@ -417,7 +439,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun openAllFoldersFilter() {
         val state = _uiState.value
         viewModelScope.launch {
-            val discovered = repository.discoverSelectableFolders(state.folderUri)
+            val discovered = repository.discoverSelectableFolders(
+                savedRootUri = state.folderUri,
+                usbFolderUri = state.usbFolderUri,
+                sdFolderUri = state.sdFolderUri,
+                activeSlot = state.activeStorageSlot
+            )
             _uiState.update {
                 it.copy(
                     selectableAllFolders = discovered,
@@ -464,6 +491,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { prefs.saveColorTheme(theme) }
     }
 
+    fun setVolumeGestureMode(mode: VolumeGestureMode) {
+        _uiState.update { it.copy(volumeGestureMode = mode) }
+        val useInternal = mode == VolumeGestureMode.APP_INTERNAL
+        service?.engine?.setInternalVolumeEnabled(useInternal)
+        if (useInternal) {
+            service?.engine?.setInternalVolume(_uiState.value.internalVolumePercent)
+        }
+        viewModelScope.launch { prefs.saveVolumeGestureMode(mode) }
+    }
+
+    fun getInternalVolumeFraction(): Float {
+        val pct = service?.engine?.getInternalVolume() ?: _uiState.value.internalVolumePercent
+        return (pct / 100f).coerceIn(0f, 1f)
+    }
+
+    fun setInternalVolumeFraction(fraction: Float) {
+        val pct = (fraction.coerceIn(0f, 1f) * 100f).toInt().coerceIn(0, 100)
+        _uiState.update { it.copy(internalVolumePercent = pct) }
+        service?.engine?.setInternalVolume(pct)
+        viewModelScope.launch { prefs.saveVlcInternalVolumePercent(pct) }
+    }
+
     /**
      * Único ponto onde o cache em memória é invalidado para reescanear o Pen Drive / armazenamento.
      */
@@ -504,7 +553,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 folderName = "Todas as Pastas"
             )
         }
-        val scanned = repository.scanAllFoldersCombined(savedFolderUri, selectedFolderIds, forceRefresh = forceRefresh)
+        val state = _uiState.value
+        val scanned = repository.scanAllFoldersCombined(
+            savedFolderUri = savedFolderUri,
+            selectedFolderIds = selectedFolderIds,
+            usbFolderUri = state.usbFolderUri,
+            sdFolderUri = state.sdFolderUri,
+            forceRefresh = forceRefresh
+        )
         applyLoadedPlaylist(scanned, autoResumeVideoId, replaceActiveQueue = true)
     }
 

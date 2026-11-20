@@ -110,15 +110,22 @@ class StorageRepository(private val context: Context) {
 
     fun getCachedAllFolders(
         savedFolderUri: String,
-        selectedFolderIds: Set<String>?
+        selectedFolderIds: Set<String>?,
+        usbFolderUri: String = "",
+        sdFolderUri: String = ""
     ): List<VideoFileItem>? {
-        val key = buildAllCacheKey(savedFolderUri, selectedFolderIds)
+        val key = buildAllCacheKey(savedFolderUri, selectedFolderIds, usbFolderUri, sdFolderUri)
         return allFoldersCache[key]
     }
 
-    private fun buildAllCacheKey(savedFolderUri: String, selectedFolderIds: Set<String>?): String {
+    private fun buildAllCacheKey(
+        savedFolderUri: String,
+        selectedFolderIds: Set<String>?,
+        usbFolderUri: String = "",
+        sdFolderUri: String = ""
+    ): String {
         val sel = selectedFolderIds?.sorted()?.joinToString(",") ?: "__ALL__"
-        return "$savedFolderUri::$sel"
+        return "$savedFolderUri::$usbFolderUri::$sdFolderUri::$sel"
     }
 
     fun invalidateAllCaches() {
@@ -339,49 +346,78 @@ class StorageRepository(private val context: Context) {
     }
 
     /**
-     * Descobre todas as pastas e subpastas disponíveis (acesso direto/SAF + buckets do MediaStore)
-     * para o usuário escolher manualmente quais entram no modo "Todas".
+     * Descobre todas as pastas e subpastas disponíveis agrupadas por origem
+     * (Pen Drive, Cartão SD, Memória Interna) para o modal de seleção do botão "Todas".
      */
-    suspend fun discoverSelectableFolders(savedRootUri: String): List<FolderEntry> = withContext(Dispatchers.IO) {
+    suspend fun discoverSelectableFolders(
+        savedRootUri: String,
+        usbFolderUri: String = "",
+        sdFolderUri: String = "",
+        activeSlot: StorageSlot = StorageSlot.USB
+    ): List<FolderEntry> = withContext(Dispatchers.IO) {
         val entries = mutableListOf<FolderEntry>()
 
-        if (savedRootUri.isNotEmpty()) {
-            if (savedRootUri.startsWith("content://")) {
-                val treeUri = Uri.parse(savedRootUri)
+        fun collectRoot(uriStr: String, groupLabel: String, filePrefix: String, safPrefix: String) {
+            if (uriStr.isEmpty()) return
+            if (uriStr.startsWith("content://")) {
+                val treeUri = Uri.parse(uriStr)
                 val directRoot = tryResolvePhysicalDirectory(treeUri, emptyList())
                 if (directRoot != null) {
-                    collectDirectFolders(directRoot, emptyList(), 0, entries)
+                    collectDirectFolders(directRoot, emptyList(), 0, entries, groupLabel, filePrefix)
                 } else {
                     val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
                     if (rootId != null) {
-                        val rootName = DocumentFile.fromTreeUri(context, treeUri)?.name ?: "Pasta Raiz"
-                        collectSafFoldersFast(treeUri, rootId, rootName, emptyList(), 0, entries)
+                        val rootName = DocumentFile.fromTreeUri(context, treeUri)?.name ?: groupLabel
+                        collectSafFoldersFast(treeUri, rootId, rootName, emptyList(), 0, entries, groupLabel, safPrefix)
                     }
                 }
             } else {
-                val rootDir = File(savedRootUri)
+                val rootDir = File(uriStr)
                 if (rootDir.exists() && rootDir.isDirectory) {
-                    collectDirectFolders(rootDir, emptyList(), 0, entries)
+                    collectDirectFolders(rootDir, emptyList(), 0, entries, groupLabel, filePrefix)
                 }
             }
         }
 
+        val primaryLabel = when {
+            savedRootUri.isNotEmpty() && savedRootUri == usbFolderUri -> "Pen Drive"
+            savedRootUri.isNotEmpty() && savedRootUri == sdFolderUri -> "Cartão SD"
+            activeSlot == StorageSlot.USB -> "Pen Drive"
+            activeSlot == StorageSlot.SD_CARD -> "Cartão SD"
+            else -> "Memória Interna"
+        }
+
+        // 1. Raiz principal salva (mantém prefixo "file:" / "saf:" para compatibilidade com seleções já salvas)
+        collectRoot(savedRootUri, primaryLabel, "file:", "saf:")
+
+        // 2. Pen Drive configurado separadamente (caso não seja a raiz principal)
+        if (usbFolderUri.isNotEmpty() && usbFolderUri != savedRootUri) {
+            collectRoot(usbFolderUri, "Pen Drive", "usb_file:", "usb_saf:")
+        }
+
+        // 3. Cartão SD configurado separadamente (caso não seja a raiz principal nem o Pen Drive)
+        if (sdFolderUri.isNotEmpty() && sdFolderUri != savedRootUri && sdFolderUri != usbFolderUri) {
+            collectRoot(sdFolderUri, "Cartão SD", "sd_file:", "sd_saf:")
+        }
+
+        // 4. Buckets de vídeo da Memória Interna (MediaStore) ordenados alfabeticamente
         val mediaStoreByFolder = queryMediaStoreVideos().groupBy { it.folderId }
-        mediaStoreByFolder.forEach { (folderId, items) ->
-            val displayName = items.firstOrNull()?.folderName ?: "Armazenamento"
-            entries.add(
+        mediaStoreByFolder.entries
+            .map { (folderId, items) ->
+                val displayName = items.firstOrNull()?.folderName ?: "Memória Interna"
                 FolderEntry(
                     id = folderId,
                     name = displayName,
                     relativePath = emptyList(),
-                    sourceLabel = "Armazenamento do Dispositivo",
+                    sourceLabel = "Memória Interna",
                     depth = 0,
                     videoCount = items.size
                 )
-            )
-        }
+            }
+            .sortedBy { normalizeForSearch(it.name) }
+            .forEach { entries.add(it) }
 
-        entries
+        entries.distinctBy { it.id }
     }
 
     /**
@@ -391,30 +427,41 @@ class StorageRepository(private val context: Context) {
     suspend fun scanAllFoldersCombined(
         savedFolderUri: String,
         selectedFolderIds: Set<String>? = null,
+        usbFolderUri: String = "",
+        sdFolderUri: String = "",
         forceRefresh: Boolean = false
     ): List<VideoFileItem> = withContext(Dispatchers.IO) {
-        val cacheKey = buildAllCacheKey(savedFolderUri, selectedFolderIds)
+        val cacheKey = buildAllCacheKey(savedFolderUri, selectedFolderIds, usbFolderUri, sdFolderUri)
         if (!forceRefresh) {
             allFoldersCache[cacheKey]?.let { return@withContext it }
         }
 
         val uniqueById = LinkedHashMap<String, VideoFileItem>()
 
-        if (savedFolderUri.isNotEmpty()) {
-            val fromSaved = if (savedFolderUri.startsWith("content://")) {
-                val treeUri = Uri.parse(savedFolderUri)
+        fun scanRoot(uriStr: String, filePrefix: String, safPrefix: String) {
+            if (uriStr.isEmpty()) return
+            val fromRoot = if (uriStr.startsWith("content://")) {
+                val treeUri = Uri.parse(uriStr)
                 val directRoot = tryResolvePhysicalDirectory(treeUri, emptyList())
                 if (directRoot != null) {
-                    scanDirectDirectory(directRoot, recursive = true)
+                    scanDirectDirectory(directRoot, recursive = true, idPrefix = filePrefix)
                 } else {
-                    scanSafTreeFast(treeUri)
+                    scanSafTreeFast(treeUri, idPrefix = safPrefix)
                 }
             } else {
-                scanDirectDirectory(File(savedFolderUri), recursive = true)
+                scanDirectDirectory(File(uriStr), recursive = true, idPrefix = filePrefix)
             }
-            fromSaved
+            fromRoot
                 .filter { selectedFolderIds == null || it.folderId in selectedFolderIds }
                 .forEach { uniqueById[it.id] = it }
+        }
+
+        scanRoot(savedFolderUri, "file:", "saf:")
+        if (usbFolderUri.isNotEmpty() && usbFolderUri != savedFolderUri) {
+            scanRoot(usbFolderUri, "usb_file:", "usb_saf:")
+        }
+        if (sdFolderUri.isNotEmpty() && sdFolderUri != savedFolderUri && sdFolderUri != usbFolderUri) {
+            scanRoot(sdFolderUri, "sd_file:", "sd_saf:")
         }
 
         queryMediaStoreVideos()
@@ -439,7 +486,9 @@ class StorageRepository(private val context: Context) {
         displayName: String,
         path: List<String>,
         depth: Int,
-        out: MutableList<FolderEntry>
+        out: MutableList<FolderEntry>,
+        sourceLabel: String = "Pen Drive",
+        idPrefix: String = "saf:"
     ) {
         if (depth > 6) return
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
@@ -477,10 +526,10 @@ class StorageRepository(private val context: Context) {
 
         out.add(
             FolderEntry(
-                id = "saf:" + path.joinToString("/"),
+                id = idPrefix + path.joinToString("/"),
                 name = displayName,
                 relativePath = path,
-                sourceLabel = "Pen Drive / Pasta SAF",
+                sourceLabel = sourceLabel,
                 depth = depth,
                 videoCount = directVideos,
                 documentId = docId
@@ -490,7 +539,16 @@ class StorageRepository(private val context: Context) {
         subDirs
             .sortedBy { normalizeForSearch(it.second) }
             .forEach { (subId, subName) ->
-                collectSafFoldersFast(treeUri, subId, subName, path + subName, depth + 1, out)
+                collectSafFoldersFast(
+                    treeUri = treeUri,
+                    docId = subId,
+                    displayName = subName,
+                    path = path + subName,
+                    depth = depth + 1,
+                    out = out,
+                    sourceLabel = sourceLabel,
+                    idPrefix = idPrefix
+                )
             }
     }
 
@@ -546,17 +604,19 @@ class StorageRepository(private val context: Context) {
         dir: File,
         path: List<String>,
         depth: Int,
-        out: MutableList<FolderEntry>
+        out: MutableList<FolderEntry>,
+        sourceLabel: String = "Pen Drive",
+        idPrefix: String = "file:"
     ) {
         if (depth > 6) return
         val children = dir.listFiles().orEmpty()
         val directVideos = children.count { it.isFile && it.extension.lowercase() in VIDEO_EXTENSIONS }
         out.add(
             FolderEntry(
-                id = "file:" + path.joinToString("/"),
+                id = idPrefix + path.joinToString("/"),
                 name = dir.name.ifBlank { "Raiz" },
                 relativePath = path,
-                sourceLabel = "Armazenamento Direto",
+                sourceLabel = sourceLabel,
                 depth = depth,
                 videoCount = directVideos
             )
@@ -565,11 +625,18 @@ class StorageRepository(private val context: Context) {
             .filter { it.isDirectory && !it.name.startsWith(".") }
             .sortedBy { normalizeForSearch(it.name) }
             .forEach { sub ->
-                collectDirectFolders(sub, path + sub.name, depth + 1, out)
+                collectDirectFolders(
+                    dir = sub,
+                    path = path + sub.name,
+                    depth = depth + 1,
+                    out = out,
+                    sourceLabel = sourceLabel,
+                    idPrefix = idPrefix
+                )
             }
     }
 
-    private fun scanSafTreeFast(treeUri: Uri): List<VideoFileItem> {
+    private fun scanSafTreeFast(treeUri: Uri, idPrefix: String = "saf:"): List<VideoFileItem> {
         val rootId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
             ?: return emptyList()
         val collected = mutableListOf<VideoFileItem>()
@@ -577,7 +644,7 @@ class StorageRepository(private val context: Context) {
         fun walk(docId: String, dirName: String, path: List<String>, depth: Int) {
             if (depth > 8) return
             val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, docId)
-            val folderId = "saf:" + path.joinToString("/")
+            val folderId = idPrefix + path.joinToString("/")
             val nextDirs = mutableListOf<Pair<String, String>>()
 
             runCatching {
@@ -632,14 +699,18 @@ class StorageRepository(private val context: Context) {
         return collected
     }
 
-    private fun scanDirectDirectory(dir: File, recursive: Boolean): List<VideoFileItem> {
+    private fun scanDirectDirectory(
+        dir: File,
+        recursive: Boolean,
+        idPrefix: String = "file:"
+    ): List<VideoFileItem> {
         if (!dir.exists() || !dir.isDirectory) return emptyList()
         val sequence = if (recursive) dir.walkTopDown().maxDepth(8) else dir.listFiles().orEmpty().asSequence()
         return sequence
             .filter { it.isFile && it.extension.lowercase() in VIDEO_EXTENSIONS }
             .map { file ->
                 val relDir = file.parentFile?.relativeToOrNull(dir)?.path.orEmpty()
-                val folderId = "file:" + if (relDir == ".") "" else relDir
+                val folderId = idPrefix + if (relDir == ".") "" else relDir
                 VideoFileItem(
                     id = file.absolutePath,
                     uri = Uri.fromFile(file),

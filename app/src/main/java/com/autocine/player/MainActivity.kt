@@ -48,7 +48,6 @@ import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
 
@@ -163,9 +162,7 @@ class MainActivity : ComponentActivity() {
                         openFolderLauncher.launch(null)
                     },
                     onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
-                    onGetBrightness = { getWindowBrightness() },
-                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
-                    onGetVolume = { getMediaVolume() }
+                    onGetBrightness = { getWindowBrightness() }
                 )
             }
         }
@@ -322,57 +319,6 @@ class MainActivity : ComponentActivity() {
             Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
         }.getOrDefault(0.75f)
         return sysBrightness.coerceIn(0.05f, 1.0f)
-    }
-
-    private fun setMediaVolume(fraction: Float) {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val target = (minVol + fraction.coerceIn(0f, 1f) * (maxVol - minVol))
-            .roundToInt()
-            .coerceIn(minVol, maxVol)
-        if (target == current) return
-
-        when {
-            target - current == 1 -> {
-                audioManager.adjustStreamVolume(
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.ADJUST_RAISE,
-                    AudioManager.FLAG_SHOW_UI
-                )
-            }
-            current - target == 1 -> {
-                audioManager.adjustStreamVolume(
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.ADJUST_LOWER,
-                    AudioManager.FLAG_SHOW_UI
-                )
-            }
-            else -> {
-                audioManager.setStreamVolume(
-                    AudioManager.STREAM_MUSIC,
-                    target,
-                    AudioManager.FLAG_SHOW_UI
-                )
-            }
-        }
-    }
-
-    private fun getMediaVolume(): Float {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 0.5f
-        val minVol = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(minVol + 1)
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        return ((current - minVol).toFloat() / (maxVol - minVol).toFloat()).coerceIn(0f, 1f)
     }
 
     private fun requestModernPermissions() {

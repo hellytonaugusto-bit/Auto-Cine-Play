@@ -62,6 +62,7 @@ fun GestureOverlay(
     onAdjustBrightness: (Float) -> Unit,
     onGetVolume: () -> Float,
     onAdjustVolume: (Float) -> Unit,
+    volumeGestureEnabled: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalAutoCinePalette.current
@@ -76,6 +77,7 @@ fun GestureOverlay(
     val latestOnAdjustBrightness by rememberUpdatedState(onAdjustBrightness)
     val latestOnGetVolume by rememberUpdatedState(onGetVolume)
     val latestOnAdjustVolume by rememberUpdatedState(onAdjustVolume)
+    val latestVolumeGestureEnabled by rememberUpdatedState(volumeGestureEnabled)
 
     var hudVisible by remember { mutableStateOf(false) }
     var displayAxis by remember { mutableStateOf(GestureAxis.VOLUME) }
@@ -152,10 +154,14 @@ fun GestureOverlay(
                                     startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
                                     GestureAxis.BRIGHTNESS
                                 }
-                                else -> {
+                                latestVolumeGestureEnabled -> {
                                     startValue = latestOnGetVolume().coerceIn(0f, 1f)
                                     GestureAxis.VOLUME
                                 }
+                                else -> GestureAxis.NONE
+                            }
+                            if (activeAxis == GestureAxis.NONE) {
+                                return@detectDragGestures
                             }
                             displayAxis = activeAxis
                             hudVisible = true

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Pause
@@ -88,6 +89,7 @@ import androidx.compose.ui.unit.sp
 import com.autocine.player.data.FolderEntry
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
+import com.autocine.player.data.VolumeGestureMode
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.LocalAutoCinePalette
 import com.autocine.player.ui.theme.UiScaleLevel
@@ -489,6 +491,7 @@ fun SplitScreenFileList(
     onDismissSettings: () -> Unit,
     onSelectUiScale: (UiScaleLevel) -> Unit,
     onSelectColorTheme: (AppColorTheme) -> Unit,
+    onSelectVolumeGestureMode: (VolumeGestureMode) -> Unit,
     onSearchChange: (String) -> Unit,
     onRefresh: () -> Unit,
     onCycleSort: () -> Unit,
@@ -820,13 +823,15 @@ fun SplitScreenFileList(
         }
     }
 
-    // Modal de Configurações (Tamanho da Interface + Tema de Cores)
+    // Modal de Configurações (Tamanho da Interface + Tema de Cores + Gesto de Volume na Tela)
     if (state.isSettingsOpen) {
         SettingsDialog(
             currentScale = state.uiScaleLevel,
             currentTheme = state.colorTheme,
+            currentVolumeGestureMode = state.volumeGestureMode,
             onSelectScale = onSelectUiScale,
             onSelectTheme = onSelectColorTheme,
+            onSelectVolumeGestureMode = onSelectVolumeGestureMode,
             onDismiss = onDismissSettings
         )
     }
@@ -872,8 +877,10 @@ fun SplitScreenFileList(
 private fun SettingsDialog(
     currentScale: UiScaleLevel,
     currentTheme: AppColorTheme,
+    currentVolumeGestureMode: VolumeGestureMode,
     onSelectScale: (UiScaleLevel) -> Unit,
     onSelectTheme: (AppColorTheme) -> Unit,
+    onSelectVolumeGestureMode: (VolumeGestureMode) -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
@@ -1026,6 +1033,69 @@ private fun SettingsDialog(
                         }
                     }
                 }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 3. Gesto de Volume na Tela (Desativado por padrão / Interno do App)
+                Text(
+                    text = "Gesto de Volume na Tela",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    VolumeGestureMode.entries.forEach { mode ->
+                        val selected = mode == currentVolumeGestureMode
+                        Surface(
+                            onClick = { onSelectVolumeGestureMode(mode) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (selected) palette.accentDark else Color(0xFF1A2234),
+                            border = BorderStroke(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) palette.accent else Color(0x26FFFFFF)
+                            ),
+                            modifier = Modifier.weight(1f).height(48.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier.padding(horizontal = 8.dp)
+                            ) {
+                                if (selected) {
+                                    Icon(
+                                        Icons.Rounded.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                }
+                                Text(
+                                    text = mode.label,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Text(
+                    text = if (currentVolumeGestureMode == VolumeGestureMode.DISABLED) {
+                        "Gesto direito desativado (volume interno fixo em 100%; use os botões da multimídia ou volante)."
+                    } else {
+                        "Deslizar na vertical à direita ajusta o volume interno da libVLC (0% a 100%)."
+                    },
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp
+                )
             }
         },
         confirmButton = {
@@ -1042,6 +1112,11 @@ private fun SettingsDialog(
     )
 }
 
+private data class FolderOriginGroup(
+    val label: String,
+    val folders: List<FolderEntry>
+)
+
 @Composable
 private fun AllFoldersFilterDialog(
     folders: List<FolderEntry>,
@@ -1054,6 +1129,47 @@ private fun AllFoldersFilterDialog(
         mutableStateOf(
             initialSelectedIds ?: folders.map { it.id }.toSet()
         )
+    }
+
+    // Tudo inicia RECOLHIDO por padrão: apenas os grupos principais (Pen Drive, Cartão SD, Memória Interna)
+    // aparecem fechados inicialmente, e cada nível expande sob demanda ao tocar na seta/grupo.
+    var expandedGroups by remember(folders) { mutableStateOf(emptySet<String>()) }
+    var expandedFolderIds by remember(folders) { mutableStateOf(emptySet<String>()) }
+
+    val groups = remember(folders) {
+        val priorityOrder = listOf("Pen Drive", "Cartão SD", "Memória Interna")
+        val grouped = folders.groupBy { it.sourceLabel.ifBlank { "Memória Interna" } }
+        val orderedKeys = priorityOrder.filter { it in grouped.keys } +
+            grouped.keys.filter { it !in priorityOrder }.sorted()
+        orderedKeys.map { label ->
+            FolderOriginGroup(label = label, folders = grouped[label].orEmpty())
+        }
+    }
+
+    // Mapeia rapidamente quais pastas possuem subpastas filhas dentro do mesmo grupo/prefixo
+    val childrenInfoByGroup = remember(groups) {
+        groups.associate { group ->
+            val byPrefixAndPath = HashMap<Pair<String, List<String>>, FolderEntry>()
+            val hasChildrenSet = HashSet<String>()
+            val parentIdByFolderId = HashMap<String, String>()
+
+            group.folders.forEach { entry ->
+                val prefix = entry.id.substringBefore(':', "")
+                byPrefixAndPath[prefix to entry.relativePath] = entry
+            }
+            group.folders.forEach { entry ->
+                if (entry.relativePath.isNotEmpty()) {
+                    val prefix = entry.id.substringBefore(':', "")
+                    val parentPath = entry.relativePath.dropLast(1)
+                    val parent = byPrefixAndPath[prefix to parentPath]
+                    if (parent != null && parent.id != entry.id) {
+                        hasChildrenSet.add(parent.id)
+                        parentIdByFolderId[entry.id] = parent.id
+                    }
+                }
+            }
+            group.label to (hasChildrenSet to parentIdByFolderId)
+        }
     }
 
     AlertDialog(
@@ -1079,41 +1195,190 @@ private fun AllFoldersFilterDialog(
                     TextButton(onClick = { draftSelected = emptySet() }) {
                         Text("Limpar", color = Color(0xFF94A3B8))
                     }
-                }
-                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp)) {
-                    items(folders, key = { it.id }) { folder ->
-                        val checked = folder.id in draftSelected
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    draftSelected = if (checked) draftSelected - folder.id else draftSelected + folder.id
-                                }
-                                .padding(start = (folder.depth * 18).dp, top = 6.dp, bottom = 6.dp, end = 6.dp)
+                    if (expandedGroups.isNotEmpty() || expandedFolderIds.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                expandedGroups = emptySet()
+                                expandedFolderIds = emptySet()
+                            }
                         ) {
-                            Checkbox(
-                                checked = checked,
-                                onCheckedChange = { isChecked ->
-                                    draftSelected = if (isChecked) draftSelected + folder.id else draftSelected - folder.id
-                                },
-                                colors = CheckboxDefaults.colors(checkedColor = palette.accent)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = folder.name,
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                            Text("Recolher", color = Color(0xFF94A3B8))
+                        }
+                    }
+                }
+
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                    groups.forEach { group ->
+                        val isGroupExpanded = group.label in expandedGroups
+                        val groupIds = group.folders.map { it.id }.toSet()
+                        val selectedCount = group.folders.count { it.id in draftSelected }
+                        val allInGroupSelected = groupIds.isNotEmpty() && selectedCount == groupIds.size
+                        val totalVideosInGroup = group.folders.sumOf { it.videoCount.coerceAtLeast(0) }
+                        val groupIcon = when (group.label) {
+                            "Pen Drive" -> Icons.Rounded.Usb
+                            "Cartão SD" -> Icons.Rounded.SdCard
+                            else -> Icons.Rounded.Storage
+                        }
+
+                        item(key = "group_${group.label}") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF151E2E))
+                                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        expandedGroups = if (isGroupExpanded) {
+                                            expandedGroups - group.label
+                                        } else {
+                                            expandedGroups + group.label
+                                        }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isGroupExpanded) {
+                                        Icons.Rounded.KeyboardArrowDown
+                                    } else {
+                                        Icons.Rounded.ChevronRight
+                                    },
+                                    contentDescription = if (isGroupExpanded) "Recolher ${group.label}" else "Expandir ${group.label}",
+                                    tint = palette.accent,
+                                    modifier = Modifier.size(26.dp)
                                 )
-                                Text(
-                                    text = "${folder.sourceLabel} · ${folder.videoCount} vídeos",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 12.sp
+                                Checkbox(
+                                    checked = allInGroupSelected,
+                                    onCheckedChange = { checked ->
+                                        draftSelected = if (checked) {
+                                            draftSelected + groupIds
+                                        } else {
+                                            draftSelected - groupIds
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = palette.accent)
                                 )
+                                Icon(
+                                    imageVector = groupIcon,
+                                    contentDescription = null,
+                                    tint = palette.accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = group.label,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$selectedCount/${group.folders.size} pastas · $totalVideosInGroup vídeos",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isGroupExpanded) {
+                            val (hasChildrenSet, parentIdMap) = childrenInfoByGroup[group.label]
+                                ?: (emptySet<String>() to emptyMap<String, String>())
+
+                            val visibleInGroup = group.folders.filter { entry ->
+                                var parentId = parentIdMap[entry.id]
+                                var ancestorsExpanded = true
+                                while (parentId != null) {
+                                    if (parentId !in expandedFolderIds) {
+                                        ancestorsExpanded = false
+                                        break
+                                    }
+                                    parentId = parentIdMap[parentId]
+                                }
+                                ancestorsExpanded
+                            }
+
+                            items(visibleInGroup, key = { "folder_${group.label}_${it.id}" }) { folder ->
+                                val checked = folder.id in draftSelected
+                                val hasSubfolders = folder.id in hasChildrenSet
+                                val isFolderExpanded = folder.id in expandedFolderIds
+                                val indentDp = (16 + folder.depth * 18).coerceAtMost(96)
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            draftSelected = if (checked) {
+                                                draftSelected - folder.id
+                                            } else {
+                                                draftSelected + folder.id
+                                            }
+                                        }
+                                        .padding(start = indentDp.dp, top = 4.dp, bottom = 4.dp, end = 6.dp)
+                                ) {
+                                    if (hasSubfolders) {
+                                        IconButton(
+                                            onClick = {
+                                                expandedFolderIds = if (isFolderExpanded) {
+                                                    expandedFolderIds - folder.id
+                                                } else {
+                                                    expandedFolderIds + folder.id
+                                                }
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isFolderExpanded) {
+                                                    Icons.Rounded.KeyboardArrowDown
+                                                } else {
+                                                    Icons.Rounded.ChevronRight
+                                                },
+                                                contentDescription = if (isFolderExpanded) "Recolher ${folder.name}" else "Expandir ${folder.name}",
+                                                tint = palette.accent,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(Modifier.width(36.dp))
+                                    }
+
+                                    Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = { isChecked ->
+                                            draftSelected = if (isChecked) {
+                                                draftSelected + folder.id
+                                            } else {
+                                                draftSelected - folder.id
+                                            }
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = folder.name,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        val countText = if (folder.videoCount >= 0) {
+                                            "${folder.videoCount} vídeos"
+                                        } else {
+                                            "Pasta"
+                                        }
+                                        Text(
+                                            text = if (hasSubfolders) "$countText · com subpastas" else countText,
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

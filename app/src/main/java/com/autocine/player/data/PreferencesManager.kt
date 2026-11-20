@@ -3,6 +3,7 @@ package com.autocine.player.data
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -30,6 +31,11 @@ enum class StorageSlot(val label: String) {
     INTERNAL("Interna")
 }
 
+enum class VolumeGestureMode(val label: String) {
+    DISABLED("Desativado"),
+    APP_INTERNAL("Interno do App")
+}
+
 data class SavedPlayerPrefs(
     val folderUri: String = "",
     val folderDisplayName: String = "Selecione uma pasta (USB / SD / Interna)",
@@ -47,7 +53,9 @@ data class SavedPlayerPrefs(
     val aspectRatio: AspectRatioOption = AspectRatioOption.FIT,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
-    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE
+    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
+    val volumeGestureMode: VolumeGestureMode = VolumeGestureMode.DISABLED,
+    val vlcInternalVolumePercent: Int = 100
 )
 
 class PreferencesManager(private val context: Context) {
@@ -70,6 +78,8 @@ class PreferencesManager(private val context: Context) {
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val UI_SCALE_LEVEL = stringPreferencesKey("ui_scale_level")
         val COLOR_THEME = stringPreferencesKey("color_theme")
+        val VOLUME_GESTURE_MODE = stringPreferencesKey("volume_gesture_mode")
+        val VLC_INTERNAL_VOLUME_PERCENT = intPreferencesKey("vlc_internal_volume_percent")
     }
 
     val prefsFlow: Flow<SavedPlayerPrefs> = context.dataStore.data.map { prefs ->
@@ -102,7 +112,11 @@ class PreferencesManager(private val context: Context) {
                 ?: UiScaleLevel.DEFAULT,
             colorTheme = prefs[Keys.COLOR_THEME]
                 ?.let { runCatching { AppColorTheme.valueOf(it) }.getOrNull() }
-                ?: AppColorTheme.AUTOMOTIVE_BLUE
+                ?: AppColorTheme.AUTOMOTIVE_BLUE,
+            volumeGestureMode = prefs[Keys.VOLUME_GESTURE_MODE]
+                ?.let { runCatching { VolumeGestureMode.valueOf(it) }.getOrNull() }
+                ?: VolumeGestureMode.DISABLED,
+            vlcInternalVolumePercent = (prefs[Keys.VLC_INTERNAL_VOLUME_PERCENT] ?: 100).coerceIn(0, 100)
         )
     }
 
@@ -173,5 +187,13 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun saveColorTheme(theme: AppColorTheme) {
         context.dataStore.edit { it[Keys.COLOR_THEME] = theme.name }
+    }
+
+    suspend fun saveVolumeGestureMode(mode: VolumeGestureMode) {
+        context.dataStore.edit { it[Keys.VOLUME_GESTURE_MODE] = mode.name }
+    }
+
+    suspend fun saveVlcInternalVolumePercent(percent: Int) {
+        context.dataStore.edit { it[Keys.VLC_INTERNAL_VOLUME_PERCENT] = percent.coerceIn(0, 100) }
     }
 }
