@@ -1575,7 +1575,7 @@ fun SplitScreenFileList(
         AlertDialog(
             onDismissRequest = onCancelDelete,
             title = { Text("Excluir arquivo?") },
-            text = { Text("Deseja apagar permanentemente \"\${toDelete.name}\" do armazenamento?") },
+            text = { Text("Deseja apagar permanentemente \\"\${toDelete.name}\\" do armazenamento?") },
             confirmButton = {
                 Button(
                     onClick = onConfirmDelete,
@@ -1610,7 +1610,7 @@ private fun AllFoldersFilterDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Selecionar Pastas para \"Todas\"",
+                text = "Selecionar Pastas para \\"Todas\\"",
                 fontSize = 19.sp,
                 fontWeight = FontWeight.Bold
             )
