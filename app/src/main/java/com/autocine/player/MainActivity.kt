@@ -23,6 +23,7 @@ import android.os.IBinder
 import android.provider.Settings
 import android.util.Rational
 import android.view.View
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,11 +72,20 @@ class MainActivity : ComponentActivity() {
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
     private var lastAppliedSystemVolStep: Int = -1
+    private var currentBrightnessFraction: Float = -1f
+    private var lastAppliedSysBrightness: Int = -1
     private val audioManager: AudioManager? by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     }
+    private val minMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            audioManager?.getStreamMinVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(0) ?: 0
+        } else {
+            0
+        }
+    }
     private val maxMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
-        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
+        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(minMusicVolume + 1) ?: 15
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -335,51 +345,123 @@ class MainActivity : ComponentActivity() {
         return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
     }
 
+    /**
+     * Ajusta o brilho real da tela ao deslizar verticalmente na metade esquerda:
+     * 1) Cria uma nova instância de WindowManager.LayoutParams (copyFrom) para garantir que
+     *    o WindowManager sempre detecte a mudança de screenBrightness (sem diff zero in-place).
+     * 2) Se a permissão WRITE_SETTINGS estiver liberada, atualiza também o backlight real do
+     *    sistema (Settings.System.SCREEN_BRIGHTNESS) em modo manual.
+     */
     private fun setWindowBrightness(fraction: Float) {
         val clamped = fraction.coerceIn(0.05f, 1.0f)
-        val params = window.attributes
-        params.screenBrightness = clamped
-        window.attributes = params
+        currentBrightnessFraction = clamped
+
+        val updatedParams = WindowManager.LayoutParams().apply {
+            copyFrom(window.attributes)
+            screenBrightness = clamped
+        }
+        window.attributes = updatedParams
+
+        if (Settings.System.canWrite(this)) {
+            val sysTarget = (clamped * 255f).roundToInt().coerceIn(12, 255)
+            if (sysTarget != lastAppliedSysBrightness) {
+                lastAppliedSysBrightness = sysTarget
+                runCatching {
+                    Settings.System.putInt(
+                        contentResolver,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                    )
+                    Settings.System.putInt(
+                        contentResolver,
+                        Settings.System.SCREEN_BRIGHTNESS,
+                        sysTarget
+                    )
+                }
+            }
+        }
     }
 
     private fun getWindowBrightness(): Float {
-        val current = window.attributes.screenBrightness
-        if (current in 0.05f..1.0f) return current
+        if (currentBrightnessFraction in 0.05f..1.0f) {
+            return currentBrightnessFraction
+        }
+        val winBrightness = window.attributes.screenBrightness
+        if (winBrightness in 0.05f..1.0f) {
+            currentBrightnessFraction = winBrightness
+            return winBrightness
+        }
         val sysBrightness = runCatching {
-            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+            val raw = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+            val maxScale = if (raw > 255) 4095f else 255f
+            raw / maxScale
         }.getOrDefault(0.75f)
         return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
     /**
-     * Ajusta o volume sem nenhum travamento (60fps):
-     * 1) Atualiza instantaneamente o volume de saída do motor libVLC (0% a 100%) e salva no estado,
-     *    garantindo que o som mude na multimídia mesmo quando o amplificador MCU ignora o Android.
-     * 2) Atualiza o AudioManager.STREAM_MUSIC do Android apenas quando cruza um novo degrau inteiro
-     *    e SEM AudioManager.FLAG_SHOW_UI (evitando que a janela de volume do sistema roube foco e trave o gesto).
+     * Controla exclusivamente o volume REAL de mídia da multimídia Android (STREAM_MUSIC),
+     * sem criar volume interno separado na libVLC (libVLC permanece travada em 100%).
+     *
+     * Usa ajuste discreto por degrau (adjustSuggestedStreamVolume + fallback setStreamVolume)
+     * disparado SOMENTE ao cruzar um degrau real — mantendo fluidez sem travar a tela e
+     * acionando os ganchos de volume de hardware/MCU presentes em centrais automotivas.
      */
     private fun setMediaVolume(fraction: Float): Float {
         val clamped = fraction.coerceIn(0f, 1f)
-        viewModel.syncVolumeFraction(clamped)
-
         val am = audioManager ?: return clamped
-        val target = (clamped * maxMusicVolume).roundToInt().coerceIn(0, maxMusicVolume)
-        if (target != lastAppliedSystemVolStep) {
+        val minVol = minMusicVolume
+        val maxVol = maxMusicVolume
+        val range = (maxVol - minVol).coerceAtLeast(1)
+        val target = (minVol + clamped * range).roundToInt().coerceIn(minVol, maxVol)
+
+        val currentStep = if (lastAppliedSystemVolStep >= 0) {
+            lastAppliedSystemVolStep
+        } else {
+            am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+        }
+
+        if (target != currentStep) {
+            val direction = if (target > currentStep) {
+                AudioManager.ADJUST_RAISE
+            } else {
+                AudioManager.ADJUST_LOWER
+            }
+            val beforeStream = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             lastAppliedSystemVolStep = target
             runCatching {
-                am.setStreamVolume(
+                am.adjustSuggestedStreamVolume(
+                    direction,
                     AudioManager.STREAM_MUSIC,
-                    target,
-                    0
+                    AudioManager.FLAG_SHOW_UI
                 )
+                val afterAdjust = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                // Se o salto foi maior que 1 degrau ou o adjust não alcançou o alvo, alinha com setStreamVolume
+                if (afterAdjust != target) {
+                    am.setStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        target,
+                        0
+                    )
+                }
+            }
+            val finalStream = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+            // Se a central realmente atualizou STREAM_MUSIC, devolve a fração real do sistema
+            if (finalStream != beforeStream || finalStream == target) {
+                return ((finalStream - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
             }
         }
         return clamped
     }
 
     private fun getMediaVolume(): Float {
-        lastAppliedSystemVolStep = -1
-        return viewModel.getVolumeFraction()
+        val am = audioManager ?: return 0.5f
+        val minVol = minMusicVolume
+        val maxVol = maxMusicVolume
+        val range = (maxVol - minVol).coerceAtLeast(1)
+        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+        lastAppliedSystemVolStep = current
+        return ((current - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
     }
 
     override fun onTrimMemory(level: Int) {

@@ -1,8 +1,13 @@
 package com.autocine.player.ui
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -1018,6 +1023,8 @@ private fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
+    val context = LocalContext.current
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1232,6 +1239,71 @@ private fun SettingsDialog(
                         )
                     }
                 }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 4. Diagnóstico de Volume / Brilho Real da Multimídia + Permissão WRITE_SETTINGS
+                Text(
+                    text = "Hardware da Multimídia",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                val canWriteBrightness = remember(showDiagnostics) {
+                    runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        onClick = {
+                            runCatching {
+                                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                                    data = Uri.parse("package:${context.packageName}")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (canWriteBrightness) Color(0xFF064E3B) else Color(0xFF1A2234),
+                        border = BorderStroke(1.dp, if (canWriteBrightness) Color(0xFF34D399) else Color(0x26FFFFFF)),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(
+                                text = if (canWriteBrightness) "Brilho Sistema: OK" else "Liberar Brilho",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = { showDiagnostics = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1A2234),
+                        border = BorderStroke(1.dp, palette.accent),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(
+                                text = "Diagnóstico Áudio",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -1243,6 +1315,171 @@ private fun SettingsDialog(
                 )
             ) {
                 Text("Concluir", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+
+    if (showDiagnostics) {
+        HeadUnitDiagnosticsDialog(
+            onDismiss = { showDiagnostics = false }
+        )
+    }
+}
+
+private fun buildHeadUnitDiagnosticsText(context: Context): String {
+    val sb = StringBuilder(512)
+    sb.append("Dispositivo: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\n')
+    sb.append("Placa/HW: ").append(Build.BOARD).append(" / ").append(Build.HARDWARE).append('\n')
+    sb.append("Android: ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\n")
+    sb.append("Build: ").append(Build.DISPLAY).append('\n')
+
+    val canWrite = runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+    val sysBright = runCatching {
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    }.getOrDefault(-1)
+    sb.append("Brilho sys=").append(sysBright).append(" | WRITE_SETTINGS=").append(if (canWrite) "SIM" else "NAO").append('\n')
+
+    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    if (am != null) {
+        sb.append("\nStreams AudioManager (atual/max):\n")
+        val names = mapOf(
+            0 to "VOICE",
+            1 to "SYS",
+            2 to "RING",
+            3 to "MUSIC",
+            4 to "ALARM",
+            5 to "NOTIF",
+            6 to "BT_SCO",
+            7 to "ENF_AUD",
+            8 to "DTMF",
+            9 to "TTS",
+            10 to "ACCESS",
+            11 to "EXTRA11"
+        )
+        for (stream in 0..11) {
+            runCatching {
+                val cur = am.getStreamVolume(stream)
+                val max = am.getStreamMaxVolume(stream)
+                if (max > 0) {
+                    val label = names[stream] ?: "S$stream"
+                    sb.append("  [$stream] ").append(label).append(": ").append(cur).append('/').append(max).append('\n')
+                }
+            }
+        }
+    }
+
+    val keywords = listOf("syu", "tw.", "xyauto", "fyt", "topway", "ts.", "qf.", "mcu", "car", "atc", "canbus", "forfan", "nwd", "zlink")
+    val carPackages: List<String> = runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getInstalledPackages(0)
+            .map { it.packageName }
+            .filter { pkg -> keywords.any { kw -> pkg.contains(kw, ignoreCase = true) } }
+            .sorted()
+            .take(12)
+    }.getOrDefault(emptyList<String>())
+
+    if (carPackages.isNotEmpty()) {
+        sb.append("\nPacotes Carro/MCU:\n")
+        carPackages.forEach { pkg -> sb.append("  • ").append(pkg).append('\n') }
+    }
+    return sb.toString().trim()
+}
+
+@Composable
+private fun HeadUnitDiagnosticsDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val palette = LocalAutoCinePalette.current
+    var reportText by remember { mutableStateOf("Lendo central multimídia...") }
+    var refreshNonce by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshNonce) {
+        reportText = withContext(Dispatchers.IO) {
+            buildHeadUnitDiagnosticsText(context)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0E1420),
+        titleContentColor = Color.White,
+        title = {
+            Text(
+                text = "Diagnóstico de Volume e Brilho",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            runCatching {
+                                am?.adjustSuggestedStreamVolume(
+                                    AudioManager.ADJUST_LOWER,
+                                    AudioManager.STREAM_MUSIC,
+                                    AudioManager.FLAG_SHOW_UI
+                                )
+                            }
+                            refreshNonce++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Vol -", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = {
+                            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            runCatching {
+                                am?.adjustSuggestedStreamVolume(
+                                    AudioManager.ADJUST_RAISE,
+                                    AudioManager.STREAM_MUSIC,
+                                    AudioManager.FLAG_SHOW_UI
+                                )
+                            }
+                            refreshNonce++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Vol +", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = { refreshNonce++ },
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accentDark, contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Ler", fontSize = 13.sp)
+                    }
+                }
+
+                Text(
+                    text = reportText,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState())
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.onAccent)
+            ) {
+                Text("Fechar", fontWeight = FontWeight.Bold)
             }
         }
     )

@@ -269,6 +269,11 @@ dependencies {
     <!-- Inicialização automática quando a central multimídia é ligada -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Ajuste direto do brilho real do sistema (backlight da multimídia) quando autorizado -->
+    <uses-permission
+        android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"

@@ -188,10 +188,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     volumePercent = saved.volumePercent
                 )
             }
-            service?.engine?.apply {
-                applyAspectRatio(saved.aspectRatio)
-                setVolumePercent(saved.volumePercent)
-            }
+            service?.engine?.applyAspectRatio(saved.aspectRatio)
 
             // Se o último vídeo salvo ainda está acessível e o serviço já conectou, inicia imediatamente em tela cheia
             if (restoredVideo != null && service != null) {
@@ -226,7 +223,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val engine = playbackService.engine
         val currentState = _uiState.value
         engine.applyAspectRatio(currentState.aspectRatio)
-        engine.setVolumePercent(currentState.volumePercent)
 
         engine.onPlayingChanged = { playing ->
             _uiState.update { it.copy(isPlaying = playing) }
@@ -651,16 +647,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _uiState.update { it.copy(startOnBoot = enabled) }
         viewModelScope.launch { prefs.saveStartOnBoot(enabled) }
     }
-
-    fun syncVolumeFraction(fraction: Float) {
-        val pct = (fraction.coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
-        _uiState.update { it.copy(volumePercent = pct) }
-        service?.engine?.setVolumePercent(pct)
-        prefs.saveVolumePercentSync(pct)
-    }
-
-    fun getVolumeFraction(): Float =
-        (_uiState.value.volumePercent / 100f).coerceIn(0f, 1f)
 
     /**
      * Único ponto onde o cache em memória é invalidado para reescanear o Pen Drive / armazenamento.

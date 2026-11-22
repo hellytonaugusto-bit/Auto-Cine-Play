@@ -52,7 +52,6 @@ class VlcPlayerEngine(context: Context) {
     @Volatile
     private var isReleased: Boolean = false
 
-    private var baseVolumePercent: Int = FIXED_VLC_VOLUME
     private var duckMultiplier: Float = 1f
     private var currentAspectRatio: AspectRatioOption = AspectRatioOption.FIT
     private var lastNotifiedTimeBucket: Long = -1L
@@ -124,7 +123,7 @@ class VlcPlayerEngine(context: Context) {
                 }
                 libVlc = createdVlc
                 mediaPlayer = createdPlayer.apply {
-                    volume = baseVolumePercent
+                    volume = FIXED_VLC_VOLUME
                     setEventListener { event ->
                         when (event.type) {
                             MediaPlayer.Event.Playing -> {
@@ -329,20 +328,15 @@ class VlcPlayerEngine(context: Context) {
 
     fun getDurationMs(): Long = mediaPlayer?.length?.coerceAtLeast(0L) ?: 0L
 
-    fun setVolumePercent(percent: Int) {
-        baseVolumePercent = percent.coerceIn(0, 100)
-        applyEffectiveVolume()
-    }
-
-    fun getVolumePercent(): Int = baseVolumePercent
-
+    // Volume interno da libVLC sempre travado em 100% para nunca criar volume separado do sistema da multimídia.
+    // Apenas o ducking temporário de navegação GPS (AudioFocusController) reduz momentaneamente o ganho.
     fun setDucking(ducked: Boolean) {
         duckMultiplier = if (ducked) 0.25f else 1.0f
         applyEffectiveVolume()
     }
 
     private fun applyEffectiveVolume() {
-        val effective = (baseVolumePercent * duckMultiplier).toInt().coerceIn(0, 100)
+        val effective = (FIXED_VLC_VOLUME * duckMultiplier).toInt().coerceIn(0, 100)
         mediaPlayer?.setVolume(effective)
     }
 

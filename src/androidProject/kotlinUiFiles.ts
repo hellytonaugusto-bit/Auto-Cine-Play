@@ -858,9 +858,14 @@ private fun FullScreenProgressBar(
     summary: 'Tela dividida otimizada com LruCache em KB (10% RAM, RGB_565), derivedStateOf e LazyColumn com rows estáveis',
     content: `package com.autocine.player.ui
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.media.AudioManager
 import android.media.MediaMetadataRetriever
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.LruCache
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
@@ -1876,6 +1881,8 @@ private fun SettingsDialog(
     onDismiss: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
+    val context = LocalContext.current
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2090,6 +2097,71 @@ private fun SettingsDialog(
                         )
                     }
                 }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 4. Diagnóstico de Volume / Brilho Real da Multimídia + Permissão WRITE_SETTINGS
+                Text(
+                    text = "Hardware da Multimídia",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                val canWriteBrightness = remember(showDiagnostics) {
+                    runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Surface(
+                        onClick = {
+                            runCatching {
+                                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                                    data = Uri.parse("package:\${context.packageName}")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (canWriteBrightness) Color(0xFF064E3B) else Color(0xFF1A2234),
+                        border = BorderStroke(1.dp, if (canWriteBrightness) Color(0xFF34D399) else Color(0x26FFFFFF)),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(
+                                text = if (canWriteBrightness) "Brilho Sistema: OK" else "Liberar Brilho",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Surface(
+                        onClick = { showDiagnostics = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1A2234),
+                        border = BorderStroke(1.dp, palette.accent),
+                        modifier = Modifier.weight(1f).height(48.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 8.dp)) {
+                            Text(
+                                text = "Diagnóstico Áudio",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2101,6 +2173,171 @@ private fun SettingsDialog(
                 )
             ) {
                 Text("Concluir", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+
+    if (showDiagnostics) {
+        HeadUnitDiagnosticsDialog(
+            onDismiss = { showDiagnostics = false }
+        )
+    }
+}
+
+private fun buildHeadUnitDiagnosticsText(context: Context): String {
+    val sb = StringBuilder(512)
+    sb.append("Dispositivo: ").append(Build.MANUFACTURER).append(' ').append(Build.MODEL).append('\\n')
+    sb.append("Placa/HW: ").append(Build.BOARD).append(" / ").append(Build.HARDWARE).append('\\n')
+    sb.append("Android: ").append(Build.VERSION.RELEASE).append(" (API ").append(Build.VERSION.SDK_INT).append(")\\n")
+    sb.append("Build: ").append(Build.DISPLAY).append('\\n')
+
+    val canWrite = runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+    val sysBright = runCatching {
+        Settings.System.getInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+    }.getOrDefault(-1)
+    sb.append("Brilho sys=").append(sysBright).append(" | WRITE_SETTINGS=").append(if (canWrite) "SIM" else "NAO").append('\\n')
+
+    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    if (am != null) {
+        sb.append("\\nStreams AudioManager (atual/max):\\n")
+        val names = mapOf(
+            0 to "VOICE",
+            1 to "SYS",
+            2 to "RING",
+            3 to "MUSIC",
+            4 to "ALARM",
+            5 to "NOTIF",
+            6 to "BT_SCO",
+            7 to "ENF_AUD",
+            8 to "DTMF",
+            9 to "TTS",
+            10 to "ACCESS",
+            11 to "EXTRA11"
+        )
+        for (stream in 0..11) {
+            runCatching {
+                val cur = am.getStreamVolume(stream)
+                val max = am.getStreamMaxVolume(stream)
+                if (max > 0) {
+                    val label = names[stream] ?: "S$stream"
+                    sb.append("  [$stream] ").append(label).append(": ").append(cur).append('/').append(max).append('\\n')
+                }
+            }
+        }
+    }
+
+    val keywords = listOf("syu", "tw.", "xyauto", "fyt", "topway", "ts.", "qf.", "mcu", "car", "atc", "canbus", "forfan", "nwd", "zlink")
+    val carPackages: List<String> = runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getInstalledPackages(0)
+            .map { it.packageName }
+            .filter { pkg -> keywords.any { kw -> pkg.contains(kw, ignoreCase = true) } }
+            .sorted()
+            .take(12)
+    }.getOrDefault(emptyList<String>())
+
+    if (carPackages.isNotEmpty()) {
+        sb.append("\\nPacotes Carro/MCU:\\n")
+        carPackages.forEach { pkg -> sb.append("  • ").append(pkg).append('\\n') }
+    }
+    return sb.toString().trim()
+}
+
+@Composable
+private fun HeadUnitDiagnosticsDialog(
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val palette = LocalAutoCinePalette.current
+    var reportText by remember { mutableStateOf("Lendo central multimídia...") }
+    var refreshNonce by remember { mutableStateOf(0) }
+
+    LaunchedEffect(refreshNonce) {
+        reportText = withContext(Dispatchers.IO) {
+            buildHeadUnitDiagnosticsText(context)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0E1420),
+        titleContentColor = Color.White,
+        title = {
+            Text(
+                text = "Diagnóstico de Volume e Brilho",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Button(
+                        onClick = {
+                            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            runCatching {
+                                am?.adjustSuggestedStreamVolume(
+                                    AudioManager.ADJUST_LOWER,
+                                    AudioManager.STREAM_MUSIC,
+                                    AudioManager.FLAG_SHOW_UI
+                                )
+                            }
+                            refreshNonce++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Vol -", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = {
+                            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                            runCatching {
+                                am?.adjustSuggestedStreamVolume(
+                                    AudioManager.ADJUST_RAISE,
+                                    AudioManager.STREAM_MUSIC,
+                                    AudioManager.FLAG_SHOW_UI
+                                )
+                            }
+                            refreshNonce++
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B), contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Vol +", fontSize = 13.sp)
+                    }
+                    Button(
+                        onClick = { refreshNonce++ },
+                        colors = ButtonDefaults.buttonColors(containerColor = palette.accentDark, contentColor = Color.White),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Ler", fontSize = 13.sp)
+                    }
+                }
+
+                Text(
+                    text = reportText,
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 260.dp)
+                        .verticalScroll(rememberScrollState())
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = palette.accent, contentColor = palette.onAccent)
+            ) {
+                Text("Fechar", fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -2726,6 +2963,7 @@ import android.os.IBinder
 import android.provider.Settings
 import android.util.Rational
 import android.view.View
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -2774,11 +3012,20 @@ class MainActivity : ComponentActivity() {
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
     private var lastAppliedSystemVolStep: Int = -1
+    private var currentBrightnessFraction: Float = -1f
+    private var lastAppliedSysBrightness: Int = -1
     private val audioManager: AudioManager? by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     }
+    private val minMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            audioManager?.getStreamMinVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(0) ?: 0
+        } else {
+            0
+        }
+    }
     private val maxMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
-        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
+        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(minMusicVolume + 1) ?: 15
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -3038,51 +3285,123 @@ class MainActivity : ComponentActivity() {
         return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
     }
 
+    /**
+     * Ajusta o brilho real da tela ao deslizar verticalmente na metade esquerda:
+     * 1) Cria uma nova instância de WindowManager.LayoutParams (copyFrom) para garantir que
+     *    o WindowManager sempre detecte a mudança de screenBrightness (sem diff zero in-place).
+     * 2) Se a permissão WRITE_SETTINGS estiver liberada, atualiza também o backlight real do
+     *    sistema (Settings.System.SCREEN_BRIGHTNESS) em modo manual.
+     */
     private fun setWindowBrightness(fraction: Float) {
         val clamped = fraction.coerceIn(0.05f, 1.0f)
-        val params = window.attributes
-        params.screenBrightness = clamped
-        window.attributes = params
+        currentBrightnessFraction = clamped
+
+        val updatedParams = WindowManager.LayoutParams().apply {
+            copyFrom(window.attributes)
+            screenBrightness = clamped
+        }
+        window.attributes = updatedParams
+
+        if (Settings.System.canWrite(this)) {
+            val sysTarget = (clamped * 255f).roundToInt().coerceIn(12, 255)
+            if (sysTarget != lastAppliedSysBrightness) {
+                lastAppliedSysBrightness = sysTarget
+                runCatching {
+                    Settings.System.putInt(
+                        contentResolver,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE,
+                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                    )
+                    Settings.System.putInt(
+                        contentResolver,
+                        Settings.System.SCREEN_BRIGHTNESS,
+                        sysTarget
+                    )
+                }
+            }
+        }
     }
 
     private fun getWindowBrightness(): Float {
-        val current = window.attributes.screenBrightness
-        if (current in 0.05f..1.0f) return current
+        if (currentBrightnessFraction in 0.05f..1.0f) {
+            return currentBrightnessFraction
+        }
+        val winBrightness = window.attributes.screenBrightness
+        if (winBrightness in 0.05f..1.0f) {
+            currentBrightnessFraction = winBrightness
+            return winBrightness
+        }
         val sysBrightness = runCatching {
-            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+            val raw = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+            val maxScale = if (raw > 255) 4095f else 255f
+            raw / maxScale
         }.getOrDefault(0.75f)
         return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
     /**
-     * Ajusta o volume sem nenhum travamento (60fps):
-     * 1) Atualiza instantaneamente o volume de saída do motor libVLC (0% a 100%) e salva no estado,
-     *    garantindo que o som mude na multimídia mesmo quando o amplificador MCU ignora o Android.
-     * 2) Atualiza o AudioManager.STREAM_MUSIC do Android apenas quando cruza um novo degrau inteiro
-     *    e SEM AudioManager.FLAG_SHOW_UI (evitando que a janela de volume do sistema roube foco e trave o gesto).
+     * Controla exclusivamente o volume REAL de mídia da multimídia Android (STREAM_MUSIC),
+     * sem criar volume interno separado na libVLC (libVLC permanece travada em 100%).
+     *
+     * Usa ajuste discreto por degrau (adjustSuggestedStreamVolume + fallback setStreamVolume)
+     * disparado SOMENTE ao cruzar um degrau real — mantendo fluidez sem travar a tela e
+     * acionando os ganchos de volume de hardware/MCU presentes em centrais automotivas.
      */
     private fun setMediaVolume(fraction: Float): Float {
         val clamped = fraction.coerceIn(0f, 1f)
-        viewModel.syncVolumeFraction(clamped)
-
         val am = audioManager ?: return clamped
-        val target = (clamped * maxMusicVolume).roundToInt().coerceIn(0, maxMusicVolume)
-        if (target != lastAppliedSystemVolStep) {
+        val minVol = minMusicVolume
+        val maxVol = maxMusicVolume
+        val range = (maxVol - minVol).coerceAtLeast(1)
+        val target = (minVol + clamped * range).roundToInt().coerceIn(minVol, maxVol)
+
+        val currentStep = if (lastAppliedSystemVolStep >= 0) {
+            lastAppliedSystemVolStep
+        } else {
+            am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+        }
+
+        if (target != currentStep) {
+            val direction = if (target > currentStep) {
+                AudioManager.ADJUST_RAISE
+            } else {
+                AudioManager.ADJUST_LOWER
+            }
+            val beforeStream = am.getStreamVolume(AudioManager.STREAM_MUSIC)
             lastAppliedSystemVolStep = target
             runCatching {
-                am.setStreamVolume(
+                am.adjustSuggestedStreamVolume(
+                    direction,
                     AudioManager.STREAM_MUSIC,
-                    target,
-                    0
+                    AudioManager.FLAG_SHOW_UI
                 )
+                val afterAdjust = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                // Se o salto foi maior que 1 degrau ou o adjust não alcançou o alvo, alinha com setStreamVolume
+                if (afterAdjust != target) {
+                    am.setStreamVolume(
+                        AudioManager.STREAM_MUSIC,
+                        target,
+                        0
+                    )
+                }
+            }
+            val finalStream = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+            // Se a central realmente atualizou STREAM_MUSIC, devolve a fração real do sistema
+            if (finalStream != beforeStream || finalStream == target) {
+                return ((finalStream - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
             }
         }
         return clamped
     }
 
     private fun getMediaVolume(): Float {
-        lastAppliedSystemVolStep = -1
-        return viewModel.getVolumeFraction()
+        val am = audioManager ?: return 0.5f
+        val minVol = minMusicVolume
+        val maxVol = maxMusicVolume
+        val range = (maxVol - minVol).coerceAtLeast(1)
+        val current = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
+        lastAppliedSystemVolStep = current
+        return ((current - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
     }
 
     override fun onTrimMemory(level: Int) {

@@ -61,6 +61,7 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
   assert.match(manifest, /RECEIVE_BOOT_COMPLETED/);
   assert.match(manifest, /\.receiver\.BootReceiver/);
+  assert.match(manifest, /WRITE_SETTINGS/);
 
   // Requirement: BootReceiver launches MainActivity when startOnBoot is enabled
   const bootReceiverKt = byPath.get('app/src/main/java/com/autocine/player/receiver/BootReceiver.kt');
@@ -120,7 +121,7 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(vlcKt, /SURFACE_FILL/);
   assert.match(vlcKt, /SURFACE_16_9/);
   assert.match(vlcKt, /SURFACE_4_3/);
-  assert.match(vlcKt, /fun setVolumePercent/);
+  assert.match(vlcKt, /FIXED_VLC_VOLUME = 100/);
   assert.match(vlcKt, /hasActiveMediaFor/);
 
   // Requirement (Safety Lock + Perf): Proven VlcVideoSurface hosting in PlayerScreen + isolated progressFlow
@@ -143,12 +144,13 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(viewModelKt, /@Immutable\s+data class PlayerUiState/);
   assert.match(viewModelKt, /Dispatchers\.Default/);
 
-  // Requirement: Smooth 60fps hybrid volume + syncBootReceiverComponent + onTrimMemory cache cleanup
+  // Requirement: Real system volume (adjustSuggestedStreamVolume + setStreamVolume, no internal VLC volume) + fresh WindowManager.LayoutParams brightness + WRITE_SETTINGS + onTrimMemory
   const mainActivityKt = byPath.get('app/src/main/java/com/autocine/player/MainActivity.kt');
   assert.ok(mainActivityKt, 'MainActivity.kt must exist');
   assert.match(mainActivityKt, /volumeControlStream = AudioManager\.STREAM_MUSIC/);
-  assert.match(mainActivityKt, /viewModel\.syncVolumeFraction\(clamped\)/);
-  assert.match(mainActivityKt, /setStreamVolume\(\s*AudioManager\.STREAM_MUSIC,\s*target,\s*0\s*\)/);
+  assert.match(mainActivityKt, /adjustSuggestedStreamVolume\(/);
+  assert.match(mainActivityKt, /WindowManager\.LayoutParams\(\)/);
+  assert.match(mainActivityKt, /Settings\.System\.canWrite/);
   assert.match(mainActivityKt, /syncBootReceiverComponent/);
   assert.match(mainActivityKt, /override fun onTrimMemory/);
 
