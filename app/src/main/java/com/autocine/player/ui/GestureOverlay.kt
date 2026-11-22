@@ -61,7 +61,7 @@ fun GestureOverlay(
     onGetBrightness: () -> Float,
     onAdjustBrightness: (Float) -> Unit,
     onGetVolume: () -> Float,
-    onAdjustVolume: (Float) -> Float,
+    onStepVolume: (Int) -> Float,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalAutoCinePalette.current
@@ -75,7 +75,7 @@ fun GestureOverlay(
     val latestOnGetBrightness by rememberUpdatedState(onGetBrightness)
     val latestOnAdjustBrightness by rememberUpdatedState(onAdjustBrightness)
     val latestOnGetVolume by rememberUpdatedState(onGetVolume)
-    val latestOnAdjustVolume by rememberUpdatedState(onAdjustVolume)
+    val latestOnStepVolume by rememberUpdatedState(onStepVolume)
 
     var hudVisible by remember { mutableStateOf(false) }
     var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }
@@ -108,15 +108,17 @@ fun GestureOverlay(
                 // - Toque simples alterna controles
                 // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)
                 // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)
-                // - Arrasto vertical na metade DIREITA: volume híbrido (libVLC + STREAM_MUSIC)
+                // - Arrasto vertical na metade DIREITA: volume real por degraus rápidos (1 deslize percorre ~18+ degraus)
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
                     val downPos = down.position
                     val startX = downPos.x
-                    val touchSlop = viewConfiguration.touchSlop.coerceAtLeast(18f)
+                    val touchSlop = viewConfiguration.touchSlop.coerceAtLeast(16f)
 
                     var activeAxis = GestureAxis.NONE
                     var startValue = 0f
+                    var lastVolY = downPos.y
+                    var volRemainderPx = 0f
                     val startPosMs = latestGetPositionMs()
                     val startDurMs = latestGetDurationMs().coerceAtLeast(0L)
                     var dragTargetMs = startPosMs
@@ -163,6 +165,8 @@ fun GestureOverlay(
                                     else -> {
                                         startValue = latestOnGetVolume().coerceIn(0f, 1f)
                                         hudValue = startValue
+                                        lastVolY = downPos.y
+                                        volRemainderPx = 0f
                                         GestureAxis.VOLUME
                                     }
                                 }
@@ -185,16 +189,25 @@ fun GestureOverlay(
                                     hudSeekDeltaSec = (target - startPosMs) / 1000L
                                 }
                                 GestureAxis.BRIGHTNESS -> {
-                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
+                                    val effectiveH = (size.height * 0.60f).coerceAtLeast(1f)
                                     val next = (startValue + (-totalDy / effectiveH)).coerceIn(0.05f, 1f)
                                     hudValue = next
                                     latestOnAdjustBrightness(next)
                                 }
                                 GestureAxis.VOLUME -> {
-                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
-                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0f, 1f)
-                                    val realSystemRatio = latestOnAdjustVolume(next).coerceIn(0f, 1f)
-                                    hudValue = realSystemRatio
+                                    // Acumulação relativa em pixels: a cada ~18-22px dispara 1 degrau real da central,
+                                    // permitindo subir ou descer o volume inteiro em um único deslize suave.
+                                    val stepPx = (size.height * 0.032f).coerceIn(14f, 24f)
+                                    val dy = change.position.y - lastVolY
+                                    lastVolY = change.position.y
+                                    volRemainderPx += dy
+                                    if (abs(volRemainderPx) >= stepPx) {
+                                        val steps = (-volRemainderPx / stepPx).toInt()
+                                        if (steps != 0) {
+                                            volRemainderPx += steps * stepPx
+                                            hudValue = latestOnStepVolume(steps).coerceIn(0f, 1f)
+                                        }
+                                    }
                                 }
                                 GestureAxis.NONE -> Unit
                             }

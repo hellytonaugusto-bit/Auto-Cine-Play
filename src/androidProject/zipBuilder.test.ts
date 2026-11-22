@@ -124,11 +124,11 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(vlcKt, /FIXED_VLC_VOLUME = 100/);
   assert.match(vlcKt, /hasActiveMediaFor/);
 
-  // Requirement (Safety Lock + Perf): Proven VlcVideoSurface hosting in PlayerScreen + isolated progressFlow
+  // Requirement (Safety Lock + Perf): Proven VlcVideoSurface hosting in PlayerScreen + isolated progressFlow + step volume
   const playerScreenKt = byPath.get('app/src/main/java/com/autocine/player/ui/PlayerScreen.kt');
   assert.ok(playerScreenKt, 'PlayerScreen.kt must exist');
   assert.match(playerScreenKt, /fun VlcVideoSurface/);
-  assert.match(playerScreenKt, /onAdjustVolume = onAdjustVolume/);
+  assert.match(playerScreenKt, /onStepVolume = onStepVolume/);
   assert.match(playerScreenKt, /progressFlow = viewModel\.playbackProgress/);
 
   // Requirement (Perf): Isolated FullScreenProgressBar composable so 1s ticks do not recompose the full player

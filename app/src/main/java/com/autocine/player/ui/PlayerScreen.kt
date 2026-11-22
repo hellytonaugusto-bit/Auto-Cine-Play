@@ -31,11 +31,12 @@ import org.videolan.libvlc.util.VLCVideoLayout
 fun PlayerScreen(
     viewModel: PlayerViewModel,
     engine: VlcPlayerEngine?,
+    screenDimAlpha: Float = 0f,
     onEnterPip: () -> Unit,
     onPickFolderForSlot: (StorageSlot) -> Unit,
     onAdjustBrightness: (Float) -> Unit,
     onGetBrightness: () -> Float,
-    onAdjustVolume: (Float) -> Float,
+    onStepVolume: (Int) -> Float,
     onGetVolume: () -> Float
 ) {
     // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn
@@ -80,13 +81,14 @@ fun PlayerScreen(
             FullscreenContent(
                 viewModel = viewModel,
                 engine = engine,
+                screenDimAlpha = screenDimAlpha,
                 isInPipMode = isInPipMode,
                 controlsVisible = controlsVisible,
                 onToggleControls = { controlsVisible = !controlsVisible },
                 onEnterPip = onEnterPip,
                 onAdjustBrightness = onAdjustBrightness,
                 onGetBrightness = onGetBrightness,
-                onAdjustVolume = onAdjustVolume,
+                onStepVolume = onStepVolume,
                 onGetVolume = onGetVolume
             )
         }
@@ -164,13 +166,14 @@ private fun SplitScreenContent(
 private fun FullscreenContent(
     viewModel: PlayerViewModel,
     engine: VlcPlayerEngine?,
+    screenDimAlpha: Float,
     isInPipMode: Boolean,
     controlsVisible: Boolean,
     onToggleControls: () -> Unit,
     onEnterPip: () -> Unit,
     onAdjustBrightness: (Float) -> Unit,
     onGetBrightness: () -> Float,
-    onAdjustVolume: (Float) -> Float,
+    onStepVolume: (Int) -> Float,
     onGetVolume: () -> Float
 ) {
     // PlayerUiState não muda a cada segundo: apenas FullScreenProgressBar observa playbackProgress
@@ -180,11 +183,21 @@ private fun FullscreenContent(
     val onOpenSplitList = remember(viewModel) { { viewModel.setSplitScreen(true) } }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)
+        // Superfície de vídeo nativa da libVLC diretamente na raiz (arquitetura preservada)
         VlcVideoSurface(
             engine = engine,
             modifier = Modifier.fillMaxSize()
         )
+
+        // Camada de atenuação noturna translúcida (somente quando o usuário reduz brilho abaixo de 100%,
+        // garantindo controle visual imediato mesmo quando o MCU trava o backlight LCD físico).
+        if (screenDimAlpha > 0.005f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = screenDimAlpha.coerceIn(0f, 0.78f)))
+            )
+        }
 
         if (!isInPipMode) {
             GestureOverlay(
@@ -195,7 +208,7 @@ private fun FullscreenContent(
                 onGetBrightness = onGetBrightness,
                 onAdjustBrightness = onAdjustBrightness,
                 onGetVolume = onGetVolume,
-                onAdjustVolume = onAdjustVolume
+                onStepVolume = onStepVolume
             )
 
             FullScreenControls(

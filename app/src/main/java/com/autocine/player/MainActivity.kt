@@ -20,6 +20,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.IBinder
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Rational
 import android.view.View
@@ -32,6 +33,7 @@ import androidx.annotation.RequiresApi
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,6 +56,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import java.util.concurrent.Executors
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -71,9 +75,16 @@ class MainActivity : ComponentActivity() {
     private var activeEngine by mutableStateOf<VlcPlayerEngine?>(null)
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
-    private var lastAppliedSystemVolStep: Int = -1
+    private var visualVolumeFraction: Float = 0.5f
+    private var lastUiFlagElapsedMs: Long = 0L
     private var currentBrightnessFraction: Float = -1f
     private var lastAppliedSysBrightness: Int = -1
+    private var screenDimAlpha by mutableFloatStateOf(0f)
+
+    private val hardwareControlExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "AutoCine-HwCtrl").apply { isDaemon = true }
+    }
+
     private val audioManager: AudioManager? by lazy(LazyThreadSafetyMode.NONE) {
         getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     }
@@ -182,7 +193,7 @@ class MainActivity : ComponentActivity() {
             }
             val onAdjustBrightnessCb = remember { { fraction: Float -> setWindowBrightness(fraction) } }
             val onGetBrightnessCb = remember { { getWindowBrightness() } }
-            val onAdjustVolumeCb = remember { { fraction: Float -> setMediaVolume(fraction) } }
+            val onStepVolumeCb = remember { { steps: Int -> stepMediaVolume(steps) } }
             val onGetVolumeCb = remember { { getMediaVolume() } }
 
             AutoCineTheme(
@@ -192,11 +203,12 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = viewModel,
                     engine = activeEngine,
+                    screenDimAlpha = screenDimAlpha,
                     onEnterPip = onEnterPipCb,
                     onPickFolderForSlot = onPickFolderCb,
                     onAdjustBrightness = onAdjustBrightnessCb,
                     onGetBrightness = onGetBrightnessCb,
-                    onAdjustVolume = onAdjustVolumeCb,
+                    onStepVolume = onStepVolumeCb,
                     onGetVolume = onGetVolumeCb
                 )
             }
@@ -346,11 +358,11 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Ajusta o brilho real da tela ao deslizar verticalmente na metade esquerda:
-     * 1) Cria uma nova instância de WindowManager.LayoutParams (copyFrom) para garantir que
-     *    o WindowManager sempre detecte a mudança de screenBrightness (sem diff zero in-place).
-     * 2) Se a permissão WRITE_SETTINGS estiver liberada, atualiza também o backlight real do
-     *    sistema (Settings.System.SCREEN_BRIGHTNESS) em modo manual.
+     * Controle de brilho triplo (funciona 100% mesmo em centrais onde o MCU trava o backlight LCD):
+     * 1) Aplica WindowManager.LayoutParams novo (copyFrom) com screenBrightness atualizado.
+     * 2) Se WRITE_SETTINGS estiver liberado, atualiza também o backlight real do sistema fora da Main Thread.
+     * 3) Aplica atenuação visual translúcida suave (screenDimAlpha: 0f em 100% até no máximo 0.78f em 5%),
+     *    garantindo resposta visual imediata em 60fps ao deslizar na metade esquerda.
      */
     private fun setWindowBrightness(fraction: Float) {
         val clamped = fraction.coerceIn(0.05f, 1.0f)
@@ -362,23 +374,35 @@ class MainActivity : ComponentActivity() {
         }
         window.attributes = updatedParams
 
-        if (Settings.System.canWrite(this)) {
+        val canWriteSystem = runCatching { Settings.System.canWrite(this) }.getOrDefault(false)
+        if (canWriteSystem) {
+            // Com WRITE_SETTINGS liberado, o hardware controla 30%-100% e o dimmer noturno suaviza abaixo de 30%
+            screenDimAlpha = if (clamped < 0.30f) {
+                ((0.30f - clamped) / 0.25f * 0.45f).coerceIn(0f, 0.45f)
+            } else {
+                0f
+            }
             val sysTarget = (clamped * 255f).roundToInt().coerceIn(12, 255)
             if (sysTarget != lastAppliedSysBrightness) {
                 lastAppliedSysBrightness = sysTarget
-                runCatching {
-                    Settings.System.putInt(
-                        contentResolver,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
-                    )
-                    Settings.System.putInt(
-                        contentResolver,
-                        Settings.System.SCREEN_BRIGHTNESS,
-                        sysTarget
-                    )
+                hardwareControlExecutor.execute {
+                    runCatching {
+                        Settings.System.putInt(
+                            contentResolver,
+                            Settings.System.SCREEN_BRIGHTNESS_MODE,
+                            Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                        )
+                        Settings.System.putInt(
+                            contentResolver,
+                            Settings.System.SCREEN_BRIGHTNESS,
+                            sysTarget
+                        )
+                    }
                 }
             }
+        } else {
+            // Sem WRITE_SETTINGS (ou quando o MCU ignora screenBrightness): atenuação visual instantânea (0% em 100%)
+            screenDimAlpha = ((1f - clamped) * 0.78f).coerceIn(0f, 0.78f)
         }
     }
 
@@ -386,82 +410,64 @@ class MainActivity : ComponentActivity() {
         if (currentBrightnessFraction in 0.05f..1.0f) {
             return currentBrightnessFraction
         }
-        val winBrightness = window.attributes.screenBrightness
-        if (winBrightness in 0.05f..1.0f) {
-            currentBrightnessFraction = winBrightness
-            return winBrightness
+        val canWriteSystem = runCatching { Settings.System.canWrite(this) }.getOrDefault(false)
+        if (!canWriteSystem) {
+            // Começa em 100% (alinhado com screenDimAlpha == 0f) para não dar salto ao iniciar o arraste
+            return 1.0f
         }
         val sysBrightness = runCatching {
             val raw = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
             val maxScale = if (raw > 255) 4095f else 255f
             raw / maxScale
-        }.getOrDefault(0.75f)
+        }.getOrDefault(0.85f)
         return sysBrightness.coerceIn(0.05f, 1.0f)
     }
 
     /**
-     * Controla exclusivamente o volume REAL de mídia da multimídia Android (STREAM_MUSIC),
-     * sem criar volume interno separado na libVLC (libVLC permanece travada em 100%).
-     *
-     * Usa ajuste discreto por degrau (adjustSuggestedStreamVolume + fallback setStreamVolume)
-     * disparado SOMENTE ao cruzar um degrau real — mantendo fluidez sem travar a tela e
-     * acionando os ganchos de volume de hardware/MCU presentes em centrais automotivas.
+     * Controla exclusivamente o volume REAL da multimídia Android/MCU por degraus relativos rápidos:
+     * - Executa AudioManager.adjustSuggestedStreamVolume em thread dedicada (zero bloqueio na Main Thread).
+     * - Nunca usa volume interno na libVLC (travada em 100%).
+     * - Suporta vários degraus em um único deslize suave e limita FLAG_SHOW_UI a cada 220ms para
+     *   eliminar completamente o atraso da janela de volume do sistema.
      */
-    private fun setMediaVolume(fraction: Float): Float {
-        val clamped = fraction.coerceIn(0f, 1f)
-        val am = audioManager ?: return clamped
-        val minVol = minMusicVolume
-        val maxVol = maxMusicVolume
-        val range = (maxVol - minVol).coerceAtLeast(1)
-        val target = (minVol + clamped * range).roundToInt().coerceIn(minVol, maxVol)
+    private fun stepMediaVolume(steps: Int): Float {
+        if (steps == 0) return visualVolumeFraction
+        val am = audioManager ?: return visualVolumeFraction
+        val range = (maxMusicVolume - minMusicVolume).coerceAtLeast(15)
+        val stepDelta = steps.toFloat() / range.toFloat()
+        visualVolumeFraction = (visualVolumeFraction + stepDelta).coerceIn(0f, 1f)
 
-        val currentStep = if (lastAppliedSystemVolStep >= 0) {
-            lastAppliedSystemVolStep
-        } else {
-            am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
-        }
+        val direction = if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+        val count = abs(steps).coerceAtMost(6)
 
-        if (target != currentStep) {
-            val direction = if (target > currentStep) {
-                AudioManager.ADJUST_RAISE
-            } else {
-                AudioManager.ADJUST_LOWER
+        hardwareControlExecutor.execute {
+            val now = SystemClock.elapsedRealtime()
+            val showUi = (now - lastUiFlagElapsedMs) >= 220L
+            if (showUi) {
+                lastUiFlagElapsedMs = now
             }
-            val beforeStream = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-            lastAppliedSystemVolStep = target
             runCatching {
-                am.adjustSuggestedStreamVolume(
-                    direction,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.FLAG_SHOW_UI
-                )
-                val afterAdjust = am.getStreamVolume(AudioManager.STREAM_MUSIC)
-                // Se o salto foi maior que 1 degrau ou o adjust não alcançou o alvo, alinha com setStreamVolume
-                if (afterAdjust != target) {
-                    am.setStreamVolume(
+                for (i in 0 until count) {
+                    val flags = if (showUi && i == count - 1) AudioManager.FLAG_SHOW_UI else 0
+                    am.adjustSuggestedStreamVolume(
+                        direction,
                         AudioManager.STREAM_MUSIC,
-                        target,
-                        0
+                        flags
                     )
                 }
             }
-            val finalStream = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
-            // Se a central realmente atualizou STREAM_MUSIC, devolve a fração real do sistema
-            if (finalStream != beforeStream || finalStream == target) {
-                return ((finalStream - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
-            }
         }
-        return clamped
+        return visualVolumeFraction
     }
 
     private fun getMediaVolume(): Float {
-        val am = audioManager ?: return 0.5f
+        val am = audioManager ?: return visualVolumeFraction
         val minVol = minMusicVolume
         val maxVol = maxMusicVolume
         val range = (maxVol - minVol).coerceAtLeast(1)
         val current = am.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(minVol, maxVol)
-        lastAppliedSystemVolStep = current
-        return ((current - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+        visualVolumeFraction = ((current - minVol).toFloat() / range.toFloat()).coerceIn(0f, 1f)
+        return visualVolumeFraction
     }
 
     override fun onTrimMemory(level: Int) {
@@ -531,6 +537,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         viewModel.persistPlaybackPosition(commitImmediately = true)
+        hardwareControlExecutor.shutdownNow()
         runCatching { unregisterReceiver(pipReceiver) }
         if (isBound) {
             unbindService(serviceConnection)
