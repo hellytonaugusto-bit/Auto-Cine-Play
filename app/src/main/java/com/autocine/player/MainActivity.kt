@@ -39,6 +39,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.documentfile.provider.DocumentFile
 import com.autocine.player.data.StorageSlot
+import com.autocine.player.receiver.BootReceiver
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.PlayerScreen
 import com.autocine.player.ui.theme.AppColorTheme
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
     private var activeEngine by mutableStateOf<VlcPlayerEngine?>(null)
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
+    private var lastAppliedSystemVolStep: Int = -1
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -143,13 +145,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             val appearanceFlow = remember {
                 viewModel.uiState
-                    .map { it.colorTheme to it.uiScaleLevel }
+                    .map { Triple(it.colorTheme, it.uiScaleLevel, it.startOnBoot) }
                     .distinctUntilChanged()
             }
             val appearance by appearanceFlow.collectAsState(
-                initial = AppColorTheme.AUTOMOTIVE_BLUE to UiScaleLevel.DEFAULT
+                initial = Triple(AppColorTheme.AUTOMOTIVE_BLUE, UiScaleLevel.DEFAULT, true)
             )
-            val (colorTheme, uiScaleLevel) = appearance
+            val (colorTheme, uiScaleLevel, startOnBoot) = appearance
+
+            // Sincroniza o estado do BootReceiver no PackageManager sempre que a opção mudar
+            syncBootReceiverComponent(startOnBoot)
+
             AutoCineTheme(
                 colorTheme = colorTheme,
                 uiScaleLevel = uiScaleLevel
@@ -325,33 +331,54 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Ajusta o volume de mídia do sistema Android (AudioManager.STREAM_MUSIC) via setStreamVolume
-     * com FLAG_SHOW_UI e retorna a porcentagem real atual (getStreamVolume / getStreamMaxVolume).
+     * Ajusta o volume sem nenhum travamento (60fps):
+     * 1) Atualiza instantaneamente o volume de saída do motor libVLC (0% a 100%) e salva no estado,
+     *    garantindo que o som mude na multimídia mesmo quando o amplificador MCU ignora o Android.
+     * 2) Atualiza o AudioManager.STREAM_MUSIC do Android apenas quando cruza um novo degrau inteiro
+     *    e SEM AudioManager.FLAG_SHOW_UI (evitando que a janela de volume do sistema roube foco e trave o gesto).
      */
     private fun setMediaVolume(fraction: Float): Float {
+        val clamped = fraction.coerceIn(0f, 1f)
+        viewModel.syncVolumeFraction(clamped)
+
         val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            ?: return fraction.coerceIn(0f, 1f)
+            ?: return clamped
         val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val target = (fraction.coerceIn(0f, 1f) * maxVol).roundToInt().coerceIn(0, maxVol)
-        if (target != current) {
+        val target = (clamped * maxVol).roundToInt().coerceIn(0, maxVol)
+        if (target != lastAppliedSystemVolStep) {
+            lastAppliedSystemVolStep = target
             runCatching {
                 audioManager.setStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     target,
-                    AudioManager.FLAG_SHOW_UI
+                    0
                 )
             }
         }
-        val actual = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)
-        return (actual.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)
+        return clamped
     }
 
     private fun getMediaVolume(): Float {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 0.5f
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)
-        return (current.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)
+        lastAppliedSystemVolStep = -1
+        return viewModel.getVolumeFraction()
+    }
+
+    private fun syncBootReceiverComponent(enabled: Boolean) {
+        runCatching {
+            val component = ComponentName(this, BootReceiver::class.java)
+            val newState = if (enabled) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            if (packageManager.getComponentEnabledSetting(component) != newState) {
+                packageManager.setComponentEnabledSetting(
+                    component,
+                    newState,
+                    PackageManager.DONT_KILL_APP
+                )
+            }
+        }
     }
 
     private fun requestModernPermissions() {

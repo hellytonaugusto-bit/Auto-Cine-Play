@@ -1,46 +1,2877 @@
-import type { AndroidProjectFile } from './buildAndManifestFiles';
+import { AndroidProjectFile } from './buildAndManifestFiles';
 
 export const KOTLIN_UI_FILES: AndroidProjectFile[] = [
   {
-    path: "app/src/main/java/com/autocine/player/ui/theme/Theme.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Tema escuro automotivo com 4 níveis de escala uniforme via LocalDensity e 6 paletas de cores pré-definidas",
-    content: "package com.autocine.player.ui.theme\n\nimport androidx.compose.material3.MaterialTheme\nimport androidx.compose.material3.darkColorScheme\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.CompositionLocalProvider\nimport androidx.compose.runtime.Immutable\nimport androidx.compose.runtime.staticCompositionLocalOf\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.platform.LocalDensity\nimport androidx.compose.ui.unit.Density\n\nenum class UiScaleLevel(val label: String, val factor: Float) {\n    SMALL(\"Pequeno\", 0.85f),\n    DEFAULT(\"Padrão\", 1.0f),\n    LARGE(\"Grande\", 1.15f),\n    EXTRA_LARGE(\"Extra Grande\", 1.30f)\n}\n\nenum class AppColorTheme(\n    val label: String,\n    val accent: Color,\n    val accentDark: Color,\n    val accentContainer: Color,\n    val accentSoft: Color,\n    val onAccent: Color\n) {\n    AUTOMOTIVE_BLUE(\n        label = \"Azul Automotivo\",\n        accent = Color(0xFF38BDF8),\n        accentDark = Color(0xFF0284C7),\n        accentContainer = Color(0xFF0369A1),\n        accentSoft = Color(0x2B38BDF8),\n        onAccent = Color(0xFF07090D)\n    ),\n    SPORT_RED(\n        label = \"Vermelho Esportivo\",\n        accent = Color(0xFFF87171),\n        accentDark = Color(0xFFDC2626),\n        accentContainer = Color(0xFF991B1B),\n        accentSoft = Color(0x2BEF4444),\n        onAccent = Color(0xFFFFFFFF)\n    ),\n    EMERALD_GREEN(\n        label = \"Verde Esmeralda\",\n        accent = Color(0xFF34D399),\n        accentDark = Color(0xFF059669),\n        accentContainer = Color(0xFF065F46),\n        accentSoft = Color(0x2B10B981),\n        onAccent = Color(0xFF042016)\n    ),\n    AMBER_GOLD(\n        label = \"Âmbar / Dourado\",\n        accent = Color(0xFFFBBF24),\n        accentDark = Color(0xFFD97706),\n        accentContainer = Color(0xFF92400E),\n        accentSoft = Color(0x2BF59E0B),\n        onAccent = Color(0xFF140D02)\n    ),\n    NEON_PURPLE(\n        label = \"Roxo Neon\",\n        accent = Color(0xFFC084FC),\n        accentDark = Color(0xFF9333EA),\n        accentContainer = Color(0xFF6B21A8),\n        accentSoft = Color(0x2BA855F7),\n        onAccent = Color(0xFF11051C)\n    ),\n    GRAPHITE_GRAY(\n        label = \"Cinza Grafite\",\n        accent = Color(0xFFCBD5E1),\n        accentDark = Color(0xFF64748B),\n        accentContainer = Color(0xFF334155),\n        accentSoft = Color(0x2B94A3B8),\n        onAccent = Color(0xFF0B0F17)\n    )\n}\n\n@Immutable\ndata class AutoCinePalette(\n    val accent: Color,\n    val accentDark: Color,\n    val accentContainer: Color,\n    val accentSoft: Color,\n    val onAccent: Color\n)\n\nval LocalAutoCinePalette = staticCompositionLocalOf {\n    AutoCinePalette(\n        accent = AppColorTheme.AUTOMOTIVE_BLUE.accent,\n        accentDark = AppColorTheme.AUTOMOTIVE_BLUE.accentDark,\n        accentContainer = AppColorTheme.AUTOMOTIVE_BLUE.accentContainer,\n        accentSoft = AppColorTheme.AUTOMOTIVE_BLUE.accentSoft,\n        onAccent = AppColorTheme.AUTOMOTIVE_BLUE.onAccent\n    )\n}\n\n@Composable\nfun AutoCineTheme(\n    colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,\n    uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,\n    content: @Composable () -> Unit\n) {\n    val palette = AutoCinePalette(\n        accent = colorTheme.accent,\n        accentDark = colorTheme.accentDark,\n        accentContainer = colorTheme.accentContainer,\n        accentSoft = colorTheme.accentSoft,\n        onAccent = colorTheme.onAccent\n    )\n\n    val colorScheme = darkColorScheme(\n        primary = colorTheme.accent,\n        onPrimary = colorTheme.onAccent,\n        primaryContainer = colorTheme.accentContainer,\n        onPrimaryContainer = Color.White,\n        background = Color(0xFF07090D),\n        surface = Color(0xFF0C1018),\n        onBackground = Color(0xFFF1F5F9),\n        onSurface = Color(0xFFF1F5F9),\n        error = Color(0xFFEF4444)\n    )\n\n    val baseDensity = LocalDensity.current\n    val scaledDensity = Density(\n        density = baseDensity.density * uiScaleLevel.factor,\n        fontScale = baseDensity.fontScale * uiScaleLevel.factor\n    )\n\n    CompositionLocalProvider(\n        LocalAutoCinePalette provides palette,\n        LocalDensity provides scaledDensity\n    ) {\n        MaterialTheme(\n            colorScheme = colorScheme,\n            content = content\n        )\n    }\n}\n",
+    path: 'app/src/main/java/com/autocine/player/ui/theme/Theme.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Tema automotivo com 6 paletas de cores e 4 níveis de escala de UI via LocalDensity',
+    content: `package com.autocine.player.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+
+enum class UiScaleLevel(val label: String, val factor: Float) {
+    SMALL("Pequeno", 0.85f),
+    DEFAULT("Padrão", 1.0f),
+    LARGE("Grande", 1.15f),
+    EXTRA_LARGE("Extra Grande", 1.30f)
+}
+
+enum class AppColorTheme(
+    val label: String,
+    val accent: Color,
+    val accentDark: Color,
+    val accentContainer: Color,
+    val accentSoft: Color,
+    val onAccent: Color
+) {
+    AUTOMOTIVE_BLUE(
+        label = "Azul Automotivo",
+        accent = Color(0xFF38BDF8),
+        accentDark = Color(0xFF0284C7),
+        accentContainer = Color(0xFF0369A1),
+        accentSoft = Color(0x2B38BDF8),
+        onAccent = Color(0xFF07090D)
+    ),
+    SPORT_RED(
+        label = "Vermelho Esportivo",
+        accent = Color(0xFFF87171),
+        accentDark = Color(0xFFDC2626),
+        accentContainer = Color(0xFF991B1B),
+        accentSoft = Color(0x2BEF4444),
+        onAccent = Color(0xFFFFFFFF)
+    ),
+    EMERALD_GREEN(
+        label = "Verde Esmeralda",
+        accent = Color(0xFF34D399),
+        accentDark = Color(0xFF059669),
+        accentContainer = Color(0xFF065F46),
+        accentSoft = Color(0x2B10B981),
+        onAccent = Color(0xFF042016)
+    ),
+    AMBER_GOLD(
+        label = "Âmbar / Dourado",
+        accent = Color(0xFFFBBF24),
+        accentDark = Color(0xFFD97706),
+        accentContainer = Color(0xFF92400E),
+        accentSoft = Color(0x2BF59E0B),
+        onAccent = Color(0xFF140D02)
+    ),
+    NEON_PURPLE(
+        label = "Roxo Neon",
+        accent = Color(0xFFC084FC),
+        accentDark = Color(0xFF9333EA),
+        accentContainer = Color(0xFF6B21A8),
+        accentSoft = Color(0x2BA855F7),
+        onAccent = Color(0xFF11051C)
+    ),
+    GRAPHITE_GRAY(
+        label = "Cinza Grafite",
+        accent = Color(0xFFCBD5E1),
+        accentDark = Color(0xFF64748B),
+        accentContainer = Color(0xFF334155),
+        accentSoft = Color(0x2B94A3B8),
+        onAccent = Color(0xFF0B0F17)
+    )
+}
+
+@Immutable
+data class AutoCinePalette(
+    val accent: Color,
+    val accentDark: Color,
+    val accentContainer: Color,
+    val accentSoft: Color,
+    val onAccent: Color
+)
+
+val LocalAutoCinePalette = staticCompositionLocalOf {
+    AutoCinePalette(
+        accent = AppColorTheme.AUTOMOTIVE_BLUE.accent,
+        accentDark = AppColorTheme.AUTOMOTIVE_BLUE.accentDark,
+        accentContainer = AppColorTheme.AUTOMOTIVE_BLUE.accentContainer,
+        accentSoft = AppColorTheme.AUTOMOTIVE_BLUE.accentSoft,
+        onAccent = AppColorTheme.AUTOMOTIVE_BLUE.onAccent
+    )
+}
+
+@Composable
+fun AutoCineTheme(
+    colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
+    uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
+    content: @Composable () -> Unit
+) {
+    val palette = AutoCinePalette(
+        accent = colorTheme.accent,
+        accentDark = colorTheme.accentDark,
+        accentContainer = colorTheme.accentContainer,
+        accentSoft = colorTheme.accentSoft,
+        onAccent = colorTheme.onAccent
+    )
+
+    val colorScheme = darkColorScheme(
+        primary = colorTheme.accent,
+        onPrimary = colorTheme.onAccent,
+        primaryContainer = colorTheme.accentContainer,
+        onPrimaryContainer = Color.White,
+        background = Color(0xFF07090D),
+        surface = Color(0xFF0C1018),
+        onBackground = Color(0xFFF1F5F9),
+        onSurface = Color(0xFFF1F5F9),
+        error = Color(0xFFEF4444)
+    )
+
+    val baseDensity = LocalDensity.current
+    val scaledDensity = Density(
+        density = baseDensity.density * uiScaleLevel.factor,
+        fontScale = baseDensity.fontScale * uiScaleLevel.factor
+    )
+
+    CompositionLocalProvider(
+        LocalAutoCinePalette provides palette,
+        LocalDensity provides scaledDensity
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            content = content
+        )
+    }
+}
+`,
   },
   {
-    path: "app/src/main/java/com/autocine/player/ui/GestureOverlay.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Detector unificado awaitEachGesture: brilho à esquerda, volume Android STREAM_MUSIC à direita com HUD real e seek horizontal",
-    content: "package com.autocine.player.ui\n\nimport androidx.compose.animation.AnimatedVisibility\nimport androidx.compose.animation.core.tween\nimport androidx.compose.animation.fadeIn\nimport androidx.compose.animation.fadeOut\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.gestures.awaitEachGesture\nimport androidx.compose.foundation.gestures.awaitFirstDown\nimport androidx.compose.foundation.layout.Arrangement\nimport androidx.compose.foundation.layout.Box\nimport androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.Spacer\nimport androidx.compose.foundation.layout.fillMaxSize\nimport androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.foundation.layout.size\nimport androidx.compose.foundation.layout.width\nimport androidx.compose.foundation.shape.RoundedCornerShape\nimport androidx.compose.material.icons.Icons\nimport androidx.compose.material.icons.rounded.Brightness6\nimport androidx.compose.material.icons.rounded.FastForward\nimport androidx.compose.material.icons.rounded.FastRewind\nimport androidx.compose.material.icons.rounded.VolumeUp\nimport androidx.compose.material3.Icon\nimport androidx.compose.material3.LinearProgressIndicator\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.DisposableEffect\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.mutableFloatStateOf\nimport androidx.compose.runtime.mutableLongStateOf\nimport androidx.compose.runtime.mutableStateOf\nimport androidx.compose.runtime.remember\nimport androidx.compose.runtime.rememberCoroutineScope\nimport androidx.compose.runtime.rememberUpdatedState\nimport androidx.compose.runtime.setValue\nimport androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.draw.clip\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.input.pointer.pointerInput\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport com.autocine.player.ui.theme.LocalAutoCinePalette\nimport kotlinx.coroutines.Job\nimport kotlinx.coroutines.delay\nimport kotlinx.coroutines.launch\nimport kotlin.math.abs\nimport kotlin.math.roundToInt\n\nprivate enum class GestureAxis { NONE, SEEK, BRIGHTNESS, VOLUME }\n\n@Composable\nfun GestureOverlay(\n    positionMs: Long,\n    durationMs: Long,\n    onTapToggleControls: () -> Unit,\n    onSeekCommit: (Long) -> Unit,\n    onGetBrightness: () -> Float,\n    onAdjustBrightness: (Float) -> Unit,\n    onGetVolume: () -> Float,\n    onAdjustVolume: (Float) -> Float,\n    modifier: Modifier = Modifier\n) {\n    val palette = LocalAutoCinePalette.current\n    val scope = rememberCoroutineScope()\n\n    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (evita congelamento do HUD)\n    val latestPositionMs by rememberUpdatedState(positionMs)\n    val latestDurationMs by rememberUpdatedState(durationMs)\n    val latestOnTap by rememberUpdatedState(onTapToggleControls)\n    val latestOnSeekCommit by rememberUpdatedState(onSeekCommit)\n    val latestOnGetBrightness by rememberUpdatedState(onGetBrightness)\n    val latestOnAdjustBrightness by rememberUpdatedState(onAdjustBrightness)\n    val latestOnGetVolume by rememberUpdatedState(onGetVolume)\n    val latestOnAdjustVolume by rememberUpdatedState(onAdjustVolume)\n\n    var hudVisible by remember { mutableStateOf(false) }\n    var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }\n    var hudValue by remember { mutableFloatStateOf(0f) }\n    var hudSeekTargetMs by remember { mutableLongStateOf(0L) }\n    var hudSeekDeltaSec by remember { mutableLongStateOf(0L) }\n    var hideHudJob by remember { mutableStateOf<Job?>(null) }\n\n    fun scheduleHudDismiss() {\n        hideHudJob?.cancel()\n        hideHudJob = scope.launch {\n            delay(650L)\n            hudVisible = false\n        }\n    }\n\n    DisposableEffect(Unit) {\n        onDispose {\n            hideHudJob?.cancel()\n            hudVisible = false\n        }\n    }\n\n    Box(\n        modifier = modifier\n            .fillMaxSize()\n            .pointerInput(Unit) {\n                // Detector unificado (awaitEachGesture) para evitar conflito entre toque e arrasto:\n                // - Toque simples alterna controles\n                // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)\n                // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)\n                // - Arrasto vertical na metade DIREITA: volume de mídia Android (STREAM_MUSIC)\n                awaitEachGesture {\n                    val down = awaitFirstDown(requireUnconsumed = true)\n                    val downPos = down.position\n                    val startX = downPos.x\n                    val touchSlop = viewConfiguration.touchSlop.coerceAtLeast(18f)\n\n                    var activeAxis = GestureAxis.NONE\n                    var startValue = 0f\n                    val startPosMs = latestPositionMs\n                    var dragTargetMs = startPosMs\n                    var pointerMovedBeyondSlop = false\n\n                    try {\n                        while (true) {\n                            val event = awaitPointerEvent()\n                            val change = event.changes.firstOrNull { it.id == down.id } ?: break\n\n                            if (!change.pressed) {\n                                if (activeAxis == GestureAxis.SEEK) {\n                                    latestOnSeekCommit(dragTargetMs)\n                                } else if (!pointerMovedBeyondSlop && !change.isConsumed) {\n                                    latestOnTap()\n                                }\n                                break\n                            }\n\n                            if (activeAxis == GestureAxis.NONE && change.isConsumed) {\n                                break\n                            }\n\n                            val totalDx = change.position.x - downPos.x\n                            val totalDy = change.position.y - downPos.y\n\n                            if (activeAxis == GestureAxis.NONE) {\n                                if (abs(totalDx) < touchSlop && abs(totalDy) < touchSlop) {\n                                    continue\n                                }\n                                pointerMovedBeyondSlop = true\n                                hideHudJob?.cancel()\n\n                                activeAxis = when {\n                                    abs(totalDx) > abs(totalDy) * 1.25f -> GestureAxis.SEEK\n                                    startX < size.width / 2f -> {\n                                        startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)\n                                        hudValue = startValue\n                                        GestureAxis.BRIGHTNESS\n                                    }\n                                    else -> {\n                                        startValue = latestOnGetVolume().coerceIn(0f, 1f)\n                                        hudValue = startValue\n                                        GestureAxis.VOLUME\n                                    }\n                                }\n                                displayAxis = activeAxis\n                                hudVisible = true\n                            }\n\n                            change.consume()\n\n                            when (activeAxis) {\n                                GestureAxis.SEEK -> {\n                                    val dur = latestDurationMs.coerceAtLeast(0L)\n                                    val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)\n                                    val widthPx = size.width.coerceAtLeast(1).toFloat()\n                                    val deltaMs = ((totalDx / widthPx) * spanMs).toLong()\n                                    val target = (startPosMs + deltaMs).coerceIn(0L, dur)\n                                    dragTargetMs = target\n                                    hudSeekTargetMs = target\n                                    hudSeekDeltaSec = (target - startPosMs) / 1000L\n                                }\n                                GestureAxis.BRIGHTNESS -> {\n                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)\n                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0.05f, 1f)\n                                    hudValue = next\n                                    latestOnAdjustBrightness(next)\n                                }\n                                GestureAxis.VOLUME -> {\n                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)\n                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0f, 1f)\n                                    val realSystemRatio = latestOnAdjustVolume(next).coerceIn(0f, 1f)\n                                    hudValue = realSystemRatio\n                                }\n                                GestureAxis.NONE -> Unit\n                            }\n                        }\n                    } finally {\n                        if (activeAxis != GestureAxis.NONE) {\n                            scheduleHudDismiss()\n                        }\n                    }\n                }\n            }\n    ) {\n        AnimatedVisibility(\n            visible = hudVisible,\n            enter = fadeIn(animationSpec = tween(120)),\n            exit = fadeOut(animationSpec = tween(180)),\n            modifier = Modifier\n                .align(Alignment.TopCenter)\n                .padding(top = 84.dp)\n        ) {\n            Column(\n                horizontalAlignment = Alignment.CenterHorizontally,\n                verticalArrangement = Arrangement.Center,\n                modifier = Modifier\n                    .clip(RoundedCornerShape(20.dp))\n                    .background(Color(0xE00A0D14))\n                    .padding(horizontal = 28.dp, vertical = 18.dp)\n            ) {\n                when (displayAxis) {\n                    GestureAxis.SEEK -> {\n                        val forward = hudSeekDeltaSec >= 0\n                        Icon(\n                            imageVector = if (forward) Icons.Rounded.FastForward else Icons.Rounded.FastRewind,\n                            contentDescription = \"Avanço por gesto\",\n                            tint = palette.accent,\n                            modifier = Modifier.size(36.dp)\n                        )\n                        Spacer(Modifier.height(6.dp))\n                        val sign = if (forward) \"+\" else \"\"\n                        Text(\n                            text = \"$sign${hudSeekDeltaSec}s\",\n                            color = Color.White,\n                            fontSize = 24.sp,\n                            fontWeight = FontWeight.Bold\n                        )\n                        Text(\n                            text = \"${formatMs(hudSeekTargetMs)} / ${formatMs(latestDurationMs)}\",\n                            color = Color(0xFFCBD5E1),\n                            fontSize = 14.sp\n                        )\n                    }\n                    GestureAxis.BRIGHTNESS -> {\n                        Icon(\n                            imageVector = Icons.Rounded.Brightness6,\n                            contentDescription = \"Brilho\",\n                            tint = Color(0xFFFBBF24),\n                            modifier = Modifier.size(34.dp)\n                        )\n                        Spacer(Modifier.height(6.dp))\n                        Text(\n                            text = \"Brilho ${(hudValue * 100f).roundToInt()}%\",\n                            color = Color.White,\n                            fontSize = 18.sp,\n                            fontWeight = FontWeight.SemiBold\n                        )\n                        Spacer(Modifier.height(10.dp))\n                        LinearProgressIndicator(\n                            progress = { hudValue },\n                            color = Color(0xFFFBBF24),\n                            trackColor = Color(0x33FFFFFF),\n                            modifier = Modifier\n                                .width(180.dp)\n                                .height(8.dp)\n                                .clip(RoundedCornerShape(4.dp))\n                        )\n                    }\n                    GestureAxis.VOLUME -> {\n                        Icon(\n                            imageVector = Icons.Rounded.VolumeUp,\n                            contentDescription = \"Volume\",\n                            tint = palette.accent,\n                            modifier = Modifier.size(34.dp)\n                        )\n                        Spacer(Modifier.height(6.dp))\n                        Text(\n                            text = \"Volume ${(hudValue * 100f).roundToInt()}%\",\n                            color = Color.White,\n                            fontSize = 18.sp,\n                            fontWeight = FontWeight.SemiBold\n                        )\n                        Spacer(Modifier.height(10.dp))\n                        LinearProgressIndicator(\n                            progress = { hudValue },\n                            color = palette.accent,\n                            trackColor = Color(0x33FFFFFF),\n                            modifier = Modifier\n                                .width(180.dp)\n                                .height(8.dp)\n                                .clip(RoundedCornerShape(4.dp))\n                        )\n                    }\n                    GestureAxis.NONE -> Unit\n                }\n            }\n        }\n    }\n}\n\nfun formatMs(ms: Long): String {\n    val totalSec = (ms / 1000L).coerceAtLeast(0L)\n    val hrs = totalSec / 3600\n    val mins = (totalSec % 3600) / 60\n    val secs = totalSec % 60\n    return if (hrs > 0) \"%02d:%02d:%02d\".format(hrs, mins, secs)\n    else \"%02d:%02d\".format(mins, secs)\n}\n",
+    path: 'app/src/main/java/com/autocine/player/ui/GestureOverlay.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Detector unificado de gestos (awaitEachGesture): brilho à esquerda, volume à direita e avanço/retrocesso horizontal',
+    content: `package com.autocine.player.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Brightness6
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.autocine.player.ui.theme.LocalAutoCinePalette
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+private enum class GestureAxis { NONE, SEEK, BRIGHTNESS, VOLUME }
+
+@Composable
+fun GestureOverlay(
+    positionMs: Long,
+    durationMs: Long,
+    onTapToggleControls: () -> Unit,
+    onSeekCommit: (Long) -> Unit,
+    onGetBrightness: () -> Float,
+    onAdjustBrightness: (Float) -> Unit,
+    onGetVolume: () -> Float,
+    onAdjustVolume: (Float) -> Float,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalAutoCinePalette.current
+    val scope = rememberCoroutineScope()
+
+    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (evita congelamento do HUD)
+    val latestPositionMs by rememberUpdatedState(positionMs)
+    val latestDurationMs by rememberUpdatedState(durationMs)
+    val latestOnTap by rememberUpdatedState(onTapToggleControls)
+    val latestOnSeekCommit by rememberUpdatedState(onSeekCommit)
+    val latestOnGetBrightness by rememberUpdatedState(onGetBrightness)
+    val latestOnAdjustBrightness by rememberUpdatedState(onAdjustBrightness)
+    val latestOnGetVolume by rememberUpdatedState(onGetVolume)
+    val latestOnAdjustVolume by rememberUpdatedState(onAdjustVolume)
+
+    var hudVisible by remember { mutableStateOf(false) }
+    var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }
+    var hudValue by remember { mutableFloatStateOf(0f) }
+    var hudSeekTargetMs by remember { mutableLongStateOf(0L) }
+    var hudSeekDeltaSec by remember { mutableLongStateOf(0L) }
+    var hideHudJob by remember { mutableStateOf<Job?>(null) }
+
+    fun scheduleHudDismiss() {
+        hideHudJob?.cancel()
+        hideHudJob = scope.launch {
+            delay(650L)
+            hudVisible = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            hideHudJob?.cancel()
+            hudVisible = false
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                // Detector unificado (awaitEachGesture) para evitar conflito entre toque e arrasto:
+                // - Toque simples alterna controles
+                // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)
+                // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)
+                // - Arrasto vertical na metade DIREITA: volume de mídia Android (STREAM_MUSIC)
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = true)
+                    val downPos = down.position
+                    val startX = downPos.x
+                    val touchSlop = viewConfiguration.touchSlop.coerceAtLeast(18f)
+
+                    var activeAxis = GestureAxis.NONE
+                    var startValue = 0f
+                    val startPosMs = latestPositionMs
+                    var dragTargetMs = startPosMs
+                    var pointerMovedBeyondSlop = false
+
+                    try {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                            if (!change.pressed) {
+                                if (activeAxis == GestureAxis.SEEK) {
+                                    latestOnSeekCommit(dragTargetMs)
+                                } else if (!pointerMovedBeyondSlop && !change.isConsumed) {
+                                    latestOnTap()
+                                }
+                                break
+                            }
+
+                            if (activeAxis == GestureAxis.NONE && change.isConsumed) {
+                                break
+                            }
+
+                            val totalDx = change.position.x - downPos.x
+                            val totalDy = change.position.y - downPos.y
+
+                            if (activeAxis == GestureAxis.NONE) {
+                                if (abs(totalDx) < touchSlop && abs(totalDy) < touchSlop) {
+                                    continue
+                                }
+                                pointerMovedBeyondSlop = true
+                                hideHudJob?.cancel()
+
+                                activeAxis = when {
+                                    abs(totalDx) > abs(totalDy) * 1.25f -> GestureAxis.SEEK
+                                    startX < size.width / 2f -> {
+                                        startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
+                                        hudValue = startValue
+                                        GestureAxis.BRIGHTNESS
+                                    }
+                                    else -> {
+                                        startValue = latestOnGetVolume().coerceIn(0f, 1f)
+                                        hudValue = startValue
+                                        GestureAxis.VOLUME
+                                    }
+                                }
+                                displayAxis = activeAxis
+                                hudVisible = true
+                            }
+
+                            change.consume()
+
+                            when (activeAxis) {
+                                GestureAxis.SEEK -> {
+                                    val dur = latestDurationMs.coerceAtLeast(0L)
+                                    val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)
+                                    val widthPx = size.width.coerceAtLeast(1).toFloat()
+                                    val deltaMs = ((totalDx / widthPx) * spanMs).toLong()
+                                    val target = (startPosMs + deltaMs).coerceIn(0L, dur)
+                                    dragTargetMs = target
+                                    hudSeekTargetMs = target
+                                    hudSeekDeltaSec = (target - startPosMs) / 1000L
+                                }
+                                GestureAxis.BRIGHTNESS -> {
+                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
+                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0.05f, 1f)
+                                    hudValue = next
+                                    latestOnAdjustBrightness(next)
+                                }
+                                GestureAxis.VOLUME -> {
+                                    val effectiveH = (size.height * 0.65f).coerceAtLeast(1f)
+                                    val next = (startValue + (-totalDy / effectiveH)).coerceIn(0f, 1f)
+                                    val realSystemRatio = latestOnAdjustVolume(next).coerceIn(0f, 1f)
+                                    hudValue = realSystemRatio
+                                }
+                                GestureAxis.NONE -> Unit
+                            }
+                        }
+                    } finally {
+                        if (activeAxis != GestureAxis.NONE) {
+                            scheduleHudDismiss()
+                        }
+                    }
+                }
+            }
+    ) {
+        AnimatedVisibility(
+            visible = hudVisible,
+            enter = fadeIn(animationSpec = tween(120)),
+            exit = fadeOut(animationSpec = tween(180)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 84.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xE00A0D14))
+                    .padding(horizontal = 28.dp, vertical = 18.dp)
+            ) {
+                when (displayAxis) {
+                    GestureAxis.SEEK -> {
+                        val forward = hudSeekDeltaSec >= 0
+                        Icon(
+                            imageVector = if (forward) Icons.Rounded.FastForward else Icons.Rounded.FastRewind,
+                            contentDescription = "Avanço por gesto",
+                            tint = palette.accent,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        val sign = if (forward) "+" else ""
+                        Text(
+                            text = "$sign\${hudSeekDeltaSec}s",
+                            color = Color.White,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "\${formatMs(hudSeekTargetMs)} / \${formatMs(latestDurationMs)}",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 14.sp
+                        )
+                    }
+                    GestureAxis.BRIGHTNESS -> {
+                        Icon(
+                            imageVector = Icons.Rounded.Brightness6,
+                            contentDescription = "Brilho",
+                            tint = Color(0xFFFBBF24),
+                            modifier = Modifier.size(34.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Brilho \${(hudValue * 100f).roundToInt()}%",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { hudValue },
+                            color = Color(0xFFFBBF24),
+                            trackColor = Color(0x33FFFFFF),
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                    }
+                    GestureAxis.VOLUME -> {
+                        Icon(
+                            imageVector = Icons.Rounded.VolumeUp,
+                            contentDescription = "Volume",
+                            tint = palette.accent,
+                            modifier = Modifier.size(34.dp)
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "Volume \${(hudValue * 100f).roundToInt()}%",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        LinearProgressIndicator(
+                            progress = { hudValue },
+                            color = palette.accent,
+                            trackColor = Color(0x33FFFFFF),
+                            modifier = Modifier
+                                .width(180.dp)
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                        )
+                    }
+                    GestureAxis.NONE -> Unit
+                }
+            }
+        }
+    }
+}
+
+fun formatMs(ms: Long): String {
+    val totalSec = (ms / 1000L).coerceAtLeast(0L)
+    val hrs = totalSec / 3600
+    val mins = (totalSec % 3600) / 60
+    val secs = totalSec % 60
+    return if (hrs > 0) "%02d:%02d:%02d".format(hrs, mins, secs)
+    else "%02d:%02d".format(mins, secs)
+}
+`,
   },
   {
-    path: "app/src/main/java/com/autocine/player/ui/FullScreenControls.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Controles em tela cheia com botões extragrandes para central 9\", paleta dinâmica e animações leves",
-    content: "package com.autocine.player.ui\n\nimport androidx.compose.animation.AnimatedVisibility\nimport androidx.compose.animation.core.tween\nimport androidx.compose.animation.fadeIn\nimport androidx.compose.animation.fadeOut\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.layout.Arrangement\nimport androidx.compose.foundation.layout.Box\nimport androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.Row\nimport androidx.compose.foundation.layout.Spacer\nimport androidx.compose.foundation.layout.fillMaxSize\nimport androidx.compose.foundation.layout.fillMaxWidth\nimport androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.foundation.layout.size\nimport androidx.compose.foundation.layout.width\nimport androidx.compose.foundation.shape.CircleShape\nimport androidx.compose.foundation.shape.RoundedCornerShape\nimport androidx.compose.material.icons.Icons\nimport androidx.compose.material.icons.rounded.AspectRatio\nimport androidx.compose.material.icons.rounded.FolderOpen\nimport androidx.compose.material.icons.rounded.Pause\nimport androidx.compose.material.icons.rounded.PictureInPictureAlt\nimport androidx.compose.material.icons.rounded.PlayArrow\nimport androidx.compose.material.icons.rounded.Repeat\nimport androidx.compose.material.icons.rounded.RepeatOne\nimport androidx.compose.material.icons.rounded.Shuffle\nimport androidx.compose.material.icons.rounded.SkipNext\nimport androidx.compose.material.icons.rounded.SkipPrevious\nimport androidx.compose.material3.Icon\nimport androidx.compose.material3.IconButton\nimport androidx.compose.material3.Slider\nimport androidx.compose.material3.SliderDefaults\nimport androidx.compose.material3.Surface\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.remember\nimport androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.graphics.Brush\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.style.TextOverflow\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport com.autocine.player.data.PlaybackMode\nimport com.autocine.player.ui.theme.LocalAutoCinePalette\nimport com.autocine.player.viewmodel.PlayerUiState\n\n@Composable\nfun FullScreenControls(\n    visible: Boolean,\n    state: PlayerUiState,\n    onTogglePlayPause: () -> Unit,\n    onPrev: () -> Unit,\n    onNext: () -> Unit,\n    onSeek: (Long) -> Unit,\n    onCycleMode: () -> Unit,\n    onCycleAspect: () -> Unit,\n    onOpenSplitList: () -> Unit,\n    onEnterPip: () -> Unit\n) {\n    val palette = LocalAutoCinePalette.current\n    val topScrim = remember { Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent)) }\n    val bottomScrim = remember { Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D))) }\n\n    AnimatedVisibility(\n        visible = visible,\n        enter = fadeIn(animationSpec = tween(150)),\n        exit = fadeOut(animationSpec = tween(180)),\n        modifier = Modifier.fillMaxSize()\n    ) {\n        Box(modifier = Modifier.fillMaxSize()) {\n            // Barra Superior otimizada para 9\": índice/total + nome completo + botão grande de PiP\n            Row(\n                verticalAlignment = Alignment.CenterVertically,\n                horizontalArrangement = Arrangement.SpaceBetween,\n                modifier = Modifier\n                    .fillMaxWidth()\n                    .align(Alignment.TopCenter)\n                    .background(topScrim)\n                    .padding(horizontal = 24.dp, vertical = 18.dp)\n            ) {\n                val total = state.allVideos.size\n                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0\n                val headerLabel = if (state.currentVideo != null) {\n                    \"%02d/%02d - %s\".format(idxDisplay, total, state.currentVideo.name)\n                } else {\n                    \"Toque em Pastas para escolher vídeos (USB / SD)\"\n                }\n\n                Text(\n                    text = headerLabel,\n                    color = Color.White,\n                    fontSize = 24.sp,\n                    fontWeight = FontWeight.SemiBold,\n                    maxLines = 1,\n                    overflow = TextOverflow.Ellipsis,\n                    modifier = Modifier.weight(1f)\n                )\n\n                Spacer(Modifier.width(16.dp))\n\n                Surface(\n                    onClick = onEnterPip,\n                    shape = RoundedCornerShape(16.dp),\n                    color = Color(0x991E293B),\n                    modifier = Modifier.height(58.dp)\n                ) {\n                    Row(\n                        verticalAlignment = Alignment.CenterVertically,\n                        modifier = Modifier.padding(horizontal = 18.dp)\n                    ) {\n                        Icon(\n                            imageVector = Icons.Rounded.PictureInPictureAlt,\n                            contentDescription = \"Picture-in-Picture\",\n                            tint = palette.accent,\n                            modifier = Modifier.size(26.dp)\n                        )\n                        Spacer(Modifier.width(8.dp))\n                        Text(\"PiP\", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)\n                    }\n                }\n            }\n\n            // Controles Extragrandes Centrais para tela de 9\" (88dp / 108dp)\n            Row(\n                horizontalArrangement = Arrangement.spacedBy(48.dp),\n                verticalAlignment = Alignment.CenterVertically,\n                modifier = Modifier.align(Alignment.Center)\n            ) {\n                Surface(\n                    onClick = onPrev,\n                    shape = CircleShape,\n                    color = Color(0xB30F172A),\n                    modifier = Modifier.size(88.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.SkipPrevious,\n                            contentDescription = \"Anterior\",\n                            tint = Color.White,\n                            modifier = Modifier.size(48.dp)\n                        )\n                    }\n                }\n\n                Surface(\n                    onClick = onTogglePlayPause,\n                    shape = CircleShape,\n                    color = palette.accent,\n                    modifier = Modifier.size(108.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,\n                            contentDescription = if (state.isPlaying) \"Pausar\" else \"Reproduzir\",\n                            tint = palette.onAccent,\n                            modifier = Modifier.size(58.dp)\n                        )\n                    }\n                }\n\n                Surface(\n                    onClick = onNext,\n                    shape = CircleShape,\n                    color = Color(0xB30F172A),\n                    modifier = Modifier.size(88.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.SkipNext,\n                            contentDescription = \"Próximo\",\n                            tint = Color.White,\n                            modifier = Modifier.size(48.dp)\n                        )\n                    }\n                }\n            }\n\n            // Barra Inferior ampla para toque seguro em 9\" (botões 64dp)\n            Column(\n                modifier = Modifier\n                    .fillMaxWidth()\n                    .align(Alignment.BottomCenter)\n                    .background(bottomScrim)\n                    .padding(horizontal = 24.dp, vertical = 18.dp)\n            ) {\n                Row(\n                    verticalAlignment = Alignment.CenterVertically,\n                    modifier = Modifier.fillMaxWidth()\n                ) {\n                    Text(formatMs(state.positionMs), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)\n                    val maxDuration = state.durationMs.coerceAtLeast(1L).toFloat()\n                    Slider(\n                        value = state.positionMs.toFloat().coerceIn(0f, maxDuration),\n                        onValueChange = { onSeek(it.toLong()) },\n                        valueRange = 0f..maxDuration,\n                        colors = SliderDefaults.colors(\n                            thumbColor = Color.White,\n                            activeTrackColor = palette.accent,\n                            inactiveTrackColor = Color(0x4DFFFFFF)\n                        ),\n                        modifier = Modifier\n                            .weight(1f)\n                            .padding(horizontal = 14.dp)\n                    )\n                    Text(formatMs(state.durationMs), color = Color(0xFFCBD5E1), fontSize = 16.sp)\n                }\n\n                Spacer(Modifier.height(10.dp))\n\n                Row(\n                    horizontalArrangement = Arrangement.SpaceBetween,\n                    verticalAlignment = Alignment.CenterVertically,\n                    modifier = Modifier.fillMaxWidth()\n                ) {\n                    // Esquerda: Modo de Reprodução + Proporção de Tela (64dp)\n                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {\n                        Surface(\n                            onClick = onCycleMode,\n                            shape = RoundedCornerShape(16.dp),\n                            color = Color(0x991E293B),\n                            modifier = Modifier.height(64.dp)\n                        ) {\n                            Row(\n                                verticalAlignment = Alignment.CenterVertically,\n                                modifier = Modifier.padding(horizontal = 18.dp)\n                            ) {\n                                val icon = when (state.playbackMode) {\n                                    PlaybackMode.SEQUENTIAL -> Icons.Rounded.Repeat\n                                    PlaybackMode.SHUFFLE -> Icons.Rounded.Shuffle\n                                    PlaybackMode.REPEAT_ONE -> Icons.Rounded.RepeatOne\n                                }\n                                Icon(icon, contentDescription = \"Modo\", tint = palette.accent, modifier = Modifier.size(26.dp))\n                                Spacer(Modifier.width(10.dp))\n                                Text(state.playbackMode.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)\n                            }\n                        }\n\n                        Surface(\n                            onClick = onCycleAspect,\n                            shape = RoundedCornerShape(16.dp),\n                            color = Color(0x991E293B),\n                            modifier = Modifier.height(64.dp)\n                        ) {\n                            Row(\n                                verticalAlignment = Alignment.CenterVertically,\n                                modifier = Modifier.padding(horizontal = 18.dp)\n                            ) {\n                                Icon(Icons.Rounded.AspectRatio, contentDescription = \"Proporção\", tint = palette.accent, modifier = Modifier.size(26.dp))\n                                Spacer(Modifier.width(10.dp))\n                                Text(state.aspectRatio.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)\n                            }\n                        }\n                    }\n\n                    // Centro: Retroceder, Play/Pause, Próximo (64dp)\n                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {\n                        IconButton(onClick = onPrev, modifier = Modifier.size(64.dp)) {\n                            Icon(Icons.Rounded.SkipPrevious, contentDescription = \"Anterior\", tint = Color.White, modifier = Modifier.size(36.dp))\n                        }\n                        IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(68.dp)) {\n                            Icon(\n                                if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,\n                                contentDescription = \"Play/Pause\",\n                                tint = Color.White,\n                                modifier = Modifier.size(40.dp)\n                            )\n                        }\n                        IconButton(onClick = onNext, modifier = Modifier.size(64.dp)) {\n                            Icon(Icons.Rounded.SkipNext, contentDescription = \"Próximo\", tint = Color.White, modifier = Modifier.size(36.dp))\n                        }\n                    }\n\n                    // Direita: Botão grande Pastas / Lista (64dp)\n                    Surface(\n                        onClick = onOpenSplitList,\n                        shape = RoundedCornerShape(16.dp),\n                        color = Color(0xFF1E293B),\n                        modifier = Modifier.height(64.dp)\n                    ) {\n                        Row(\n                            verticalAlignment = Alignment.CenterVertically,\n                            modifier = Modifier.padding(horizontal = 22.dp)\n                        ) {\n                            Icon(Icons.Rounded.FolderOpen, contentDescription = \"Pastas\", tint = palette.accent, modifier = Modifier.size(28.dp))\n                            Spacer(Modifier.width(10.dp))\n                            Text(\"Pastas / Lista\", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)\n                        }\n                    }\n                }\n            }\n        }\n    }\n}\n",
+    path: 'app/src/main/java/com/autocine/player/ui/FullScreenControls.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Overlay em tela cheia com auto-hide de 3.5s, barra de progresso, proporção, modo de repetição e PiP',
+    content: `package com.autocine.player.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Repeat
+import androidx.compose.material.icons.rounded.RepeatOne
+import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.autocine.player.data.PlaybackMode
+import com.autocine.player.ui.theme.LocalAutoCinePalette
+import com.autocine.player.viewmodel.PlayerUiState
+
+@Composable
+fun FullScreenControls(
+    visible: Boolean,
+    state: PlayerUiState,
+    onTogglePlayPause: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onCycleMode: () -> Unit,
+    onCycleAspect: () -> Unit,
+    onOpenSplitList: () -> Unit,
+    onEnterPip: () -> Unit
+) {
+    val palette = LocalAutoCinePalette.current
+    val topScrim = remember { Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent)) }
+    val bottomScrim = remember { Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D))) }
+
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(150)),
+        exit = fadeOut(animationSpec = tween(180)),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Barra Superior otimizada para 9": índice/total + nome completo + botão grande de PiP
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(topScrim)
+                    .padding(horizontal = 24.dp, vertical = 18.dp)
+            ) {
+                val total = state.allVideos.size
+                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0
+                val headerLabel = if (state.currentVideo != null) {
+                    "%02d/%02d - %s".format(idxDisplay, total, state.currentVideo.name)
+                } else {
+                    "Toque em Pastas para escolher vídeos (USB / SD)"
+                }
+
+                Text(
+                    text = headerLabel,
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+
+                Spacer(Modifier.width(16.dp))
+
+                Surface(
+                    onClick = onEnterPip,
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0x991E293B),
+                    modifier = Modifier.height(58.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 18.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.PictureInPictureAlt,
+                            contentDescription = "Picture-in-Picture",
+                            tint = palette.accent,
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("PiP", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+
+            // Controles Extragrandes Centrais para tela de 9" (88dp / 108dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(48.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                Surface(
+                    onClick = onPrev,
+                    shape = CircleShape,
+                    color = Color(0xB30F172A),
+                    modifier = Modifier.size(88.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipPrevious,
+                            contentDescription = "Anterior",
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onTogglePlayPause,
+                    shape = CircleShape,
+                    color = palette.accent,
+                    modifier = Modifier.size(108.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = if (state.isPlaying) "Pausar" else "Reproduzir",
+                            tint = palette.onAccent,
+                            modifier = Modifier.size(58.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onNext,
+                    shape = CircleShape,
+                    color = Color(0xB30F172A),
+                    modifier = Modifier.size(88.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipNext,
+                            contentDescription = "Próximo",
+                            tint = Color.White,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+            }
+
+            // Barra Inferior ampla para toque seguro em 9" (botões 64dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(bottomScrim)
+                    .padding(horizontal = 24.dp, vertical = 18.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(formatMs(state.positionMs), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                    val maxDuration = state.durationMs.coerceAtLeast(1L).toFloat()
+                    Slider(
+                        value = state.positionMs.toFloat().coerceIn(0f, maxDuration),
+                        onValueChange = { onSeek(it.toLong()) },
+                        valueRange = 0f..maxDuration,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = palette.accent,
+                            inactiveTrackColor = Color(0x4DFFFFFF)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 14.dp)
+                    )
+                    Text(formatMs(state.durationMs), color = Color(0xFFCBD5E1), fontSize = 16.sp)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Esquerda: Modo de Reprodução + Proporção de Tela (64dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Surface(
+                            onClick = onCycleMode,
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0x991E293B),
+                            modifier = Modifier.height(64.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 18.dp)
+                            ) {
+                                val icon = when (state.playbackMode) {
+                                    PlaybackMode.SEQUENTIAL -> Icons.Rounded.Repeat
+                                    PlaybackMode.SHUFFLE -> Icons.Rounded.Shuffle
+                                    PlaybackMode.REPEAT_ONE -> Icons.Rounded.RepeatOne
+                                }
+                                Icon(icon, contentDescription = "Modo", tint = palette.accent, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(state.playbackMode.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+
+                        Surface(
+                            onClick = onCycleAspect,
+                            shape = RoundedCornerShape(16.dp),
+                            color = Color(0x991E293B),
+                            modifier = Modifier.height(64.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 18.dp)
+                            ) {
+                                Icon(Icons.Rounded.AspectRatio, contentDescription = "Proporção", tint = palette.accent, modifier = Modifier.size(26.dp))
+                                Spacer(Modifier.width(10.dp))
+                                Text(state.aspectRatio.label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+
+                    // Centro: Retroceder, Play/Pause, Próximo (64dp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPrev, modifier = Modifier.size(64.dp)) {
+                            Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(36.dp))
+                        }
+                        IconButton(onClick = onTogglePlayPause, modifier = Modifier.size(68.dp)) {
+                            Icon(
+                                if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = Color.White,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                        IconButton(onClick = onNext, modifier = Modifier.size(64.dp)) {
+                            Icon(Icons.Rounded.SkipNext, contentDescription = "Próximo", tint = Color.White, modifier = Modifier.size(36.dp))
+                        }
+                    }
+
+                    // Direita: Botão grande Pastas / Lista (64dp)
+                    Surface(
+                        onClick = onOpenSplitList,
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.height(64.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 22.dp)
+                        ) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = "Pastas", tint = palette.accent, modifier = Modifier.size(28.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Pastas / Lista", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+`,
   },
   {
-    path: "app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Painel esquerdo limpo e rolável, Configurações (Escala + Tema), modal Todas recolhido por padrão e miniaturas lazy canceláveis",
-    content: "package com.autocine.player.ui\n\nimport android.graphics.Bitmap\nimport android.media.MediaMetadataRetriever\nimport android.os.Build\nimport android.util.LruCache\nimport androidx.compose.foundation.BorderStroke\nimport androidx.compose.foundation.Image\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.border\nimport androidx.compose.foundation.clickable\nimport androidx.compose.foundation.horizontalScroll\nimport androidx.compose.foundation.layout.Arrangement\nimport androidx.compose.foundation.layout.Box\nimport androidx.compose.foundation.layout.Column\nimport androidx.compose.foundation.layout.Row\nimport androidx.compose.foundation.layout.Spacer\nimport androidx.compose.foundation.layout.aspectRatio\nimport androidx.compose.foundation.layout.fillMaxSize\nimport androidx.compose.foundation.layout.fillMaxWidth\nimport androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.heightIn\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.foundation.layout.size\nimport androidx.compose.foundation.layout.width\nimport androidx.compose.foundation.lazy.LazyColumn\nimport androidx.compose.foundation.lazy.items\nimport androidx.compose.foundation.lazy.itemsIndexed\nimport androidx.compose.foundation.lazy.rememberLazyListState\nimport androidx.compose.foundation.rememberScrollState\nimport androidx.compose.foundation.shape.CircleShape\nimport androidx.compose.foundation.shape.RoundedCornerShape\nimport androidx.compose.foundation.verticalScroll\nimport androidx.compose.material.icons.Icons\nimport androidx.compose.material.icons.automirrored.rounded.ArrowBack\nimport androidx.compose.material.icons.rounded.Check\nimport androidx.compose.material.icons.rounded.ChevronRight\nimport androidx.compose.material.icons.rounded.Delete\nimport androidx.compose.material.icons.rounded.Folder\nimport androidx.compose.material.icons.rounded.KeyboardArrowDown\nimport androidx.compose.material.icons.rounded.Layers\nimport androidx.compose.material.icons.rounded.Movie\nimport androidx.compose.material.icons.rounded.Pause\nimport androidx.compose.material.icons.rounded.PictureInPictureAlt\nimport androidx.compose.material.icons.rounded.PlayArrow\nimport androidx.compose.material.icons.rounded.Refresh\nimport androidx.compose.material.icons.rounded.SdCard\nimport androidx.compose.material.icons.rounded.Search\nimport androidx.compose.material.icons.rounded.Settings\nimport androidx.compose.material.icons.rounded.SkipNext\nimport androidx.compose.material.icons.rounded.SkipPrevious\nimport androidx.compose.material.icons.rounded.SortByAlpha\nimport androidx.compose.material.icons.rounded.Storage\nimport androidx.compose.material.icons.rounded.Tune\nimport androidx.compose.material.icons.rounded.Usb\nimport androidx.compose.material3.AlertDialog\nimport androidx.compose.material3.Button\nimport androidx.compose.material3.ButtonDefaults\nimport androidx.compose.material3.Checkbox\nimport androidx.compose.material3.CheckboxDefaults\nimport androidx.compose.material3.HorizontalDivider\nimport androidx.compose.material3.Icon\nimport androidx.compose.material3.IconButton\nimport androidx.compose.material3.OutlinedTextField\nimport androidx.compose.material3.OutlinedTextFieldDefaults\nimport androidx.compose.material3.Surface\nimport androidx.compose.material3.Text\nimport androidx.compose.material3.TextButton\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.LaunchedEffect\nimport androidx.compose.runtime.derivedStateOf\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.mutableStateOf\nimport androidx.compose.runtime.remember\nimport androidx.compose.runtime.setValue\nimport androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.draw.clip\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.graphics.ImageBitmap\nimport androidx.compose.ui.graphics.asImageBitmap\nimport androidx.compose.ui.graphics.vector.ImageVector\nimport androidx.compose.ui.layout.ContentScale\nimport androidx.compose.ui.platform.LocalContext\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.style.TextOverflow\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport com.autocine.player.data.FolderEntry\nimport com.autocine.player.data.StorageSlot\nimport com.autocine.player.data.VideoFileItem\nimport com.autocine.player.ui.theme.AppColorTheme\nimport com.autocine.player.ui.theme.LocalAutoCinePalette\nimport com.autocine.player.ui.theme.UiScaleLevel\nimport com.autocine.player.viewmodel.PlayerUiState\nimport kotlinx.coroutines.CancellationException\nimport kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.delay\nimport kotlinx.coroutines.ensureActive\nimport kotlinx.coroutines.sync.Semaphore\nimport kotlinx.coroutines.sync.withPermit\nimport kotlinx.coroutines.withContext\nimport java.util.Collections\n\nprivate object VideoThumbnailMemoryCache {\n    private val cache = LruCache<String, ImageBitmap>(60)\n    private val failedKeys = Collections.synchronizedSet(HashSet<String>())\n    val decodeSemaphore = Semaphore(2)\n\n    fun get(key: String): ImageBitmap? = cache.get(key)\n    fun hasFailed(key: String): Boolean = failedKeys.contains(key)\n    fun put(key: String, bitmap: ImageBitmap) {\n        cache.put(key, bitmap)\n    }\n    fun markFailed(key: String) {\n        if (failedKeys.size > 300) failedKeys.clear()\n        failedKeys.add(key)\n    }\n}\n\n@Composable\nprivate fun VideoListThumbnail(\n    item: VideoFileItem,\n    isCurrent: Boolean,\n    isPlaying: Boolean\n) {\n    val palette = LocalAutoCinePalette.current\n    val context = LocalContext.current\n    var bitmap by remember(item.id) { mutableStateOf(VideoThumbnailMemoryCache.get(item.id)) }\n\n    LaunchedEffect(item.id) {\n        if (bitmap == null && !VideoThumbnailMemoryCache.hasFailed(item.id)) {\n            // Pequeno atraso antes de acessar o Pen Drive: se o usuário rolar rapidamente,\n            // a coroutine é cancelada automaticamente antes de abrir o MediaMetadataRetriever.\n            delay(120L)\n            val loaded = withContext(Dispatchers.IO) {\n                ensureActive()\n                VideoThumbnailMemoryCache.decodeSemaphore.withPermit {\n                    ensureActive()\n                    VideoThumbnailMemoryCache.get(item.id)?.let { return@withPermit it }\n                    val retriever = MediaMetadataRetriever()\n                    try {\n                        retriever.setDataSource(context, item.uri)\n                        ensureActive()\n                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {\n                            retriever.getScaledFrameAtTime(\n                                1_500_000L,\n                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,\n                                192,\n                                108\n                            )\n                        } else {\n                            retriever.getFrameAtTime(\n                                1_500_000L,\n                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC\n                            )?.let { full ->\n                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)\n                                if (scaled != full) full.recycle()\n                                scaled\n                            }\n                        }\n                        frame?.asImageBitmap()\n                    } catch (ce: CancellationException) {\n                        throw ce\n                    } catch (_: Throwable) {\n                        null\n                    } finally {\n                        runCatching { retriever.release() }\n                    }\n                }\n            }\n            if (loaded != null) {\n                VideoThumbnailMemoryCache.put(item.id, loaded)\n                bitmap = loaded\n            } else {\n                VideoThumbnailMemoryCache.markFailed(item.id)\n            }\n        }\n    }\n\n    Box(\n        contentAlignment = Alignment.Center,\n        modifier = Modifier\n            .width(96.dp)\n            .height(54.dp)\n            .clip(RoundedCornerShape(10.dp))\n            .background(Color(0xFF0F172A))\n            .border(\n                width = if (isCurrent) 2.dp else 1.dp,\n                color = if (isCurrent) palette.accent else Color(0x1FFFFFFF),\n                shape = RoundedCornerShape(10.dp)\n            )\n    ) {\n        val bmp = bitmap\n        if (bmp != null) {\n            Image(\n                bitmap = bmp,\n                contentDescription = \"Miniatura de ${item.name}\",\n                contentScale = ContentScale.Crop,\n                modifier = Modifier.fillMaxSize()\n            )\n        } else {\n            Icon(\n                imageVector = Icons.Rounded.Movie,\n                contentDescription = null,\n                tint = Color(0xFF475569),\n                modifier = Modifier.size(24.dp)\n            )\n        }\n\n        if (isCurrent) {\n            Box(\n                contentAlignment = Alignment.Center,\n                modifier = Modifier\n                    .fillMaxSize()\n                    .background(Color(0x59000000))\n            ) {\n                Box(\n                    contentAlignment = Alignment.Center,\n                    modifier = Modifier\n                        .size(30.dp)\n                        .clip(CircleShape)\n                        .background(palette.accent)\n                ) {\n                    Icon(\n                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,\n                        contentDescription = null,\n                        tint = palette.onAccent,\n                        modifier = Modifier.size(18.dp)\n                    )\n                }\n            }\n        }\n    }\n}\n\n@Composable\nfun SplitScreenLeftPane(\n    isPlaying: Boolean,\n    activeStorageSlot: StorageSlot,\n    hasCustomAllFilter: Boolean,\n    videoSurface: @Composable () -> Unit,\n    onExpandVideo: () -> Unit,\n    onTogglePlayPause: () -> Unit,\n    onPrev: () -> Unit,\n    onNext: () -> Unit,\n    onEnterPip: () -> Unit,\n    onSelectStorageSlot: (StorageSlot) -> Unit,\n    onOpenAllFilter: () -> Unit,\n    modifier: Modifier = Modifier\n) {\n    val palette = LocalAutoCinePalette.current\n\n    Column(\n        modifier = modifier\n            .background(Color(0xFF0C1018), RoundedCornerShape(18.dp))\n            .padding(12.dp)\n    ) {\n        // Quadro do vídeo minimizado (toque para expandir instantaneamente para tela cheia)\n        Box(\n            modifier = Modifier\n                .fillMaxWidth()\n                .aspectRatio(16f / 9f)\n                .clip(RoundedCornerShape(14.dp))\n                .background(Color.Black)\n                .clickable { onExpandVideo() }\n        ) {\n            videoSurface()\n        }\n\n        Spacer(Modifier.height(12.dp))\n\n        // Conteúdo abaixo do vídeo com rolagem vertical para nunca cortar em telas menores\n        Column(\n            verticalArrangement = Arrangement.spacedBy(12.dp),\n            modifier = Modifier\n                .fillMaxWidth()\n                .weight(1f)\n                .verticalScroll(rememberScrollState())\n        ) {\n            // Controles principais: Anterior, Play/Pause, Próximo, PiP\n            Row(\n                horizontalArrangement = Arrangement.spacedBy(8.dp),\n                verticalAlignment = Alignment.CenterVertically,\n                modifier = Modifier.fillMaxWidth()\n            ) {\n                Surface(\n                    onClick = onPrev,\n                    shape = RoundedCornerShape(14.dp),\n                    color = Color(0xFF1A2234),\n                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),\n                    modifier = Modifier.weight(1f).height(58.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.SkipPrevious,\n                            contentDescription = \"Anterior\",\n                            tint = Color.White,\n                            modifier = Modifier.size(32.dp)\n                        )\n                    }\n                }\n\n                Surface(\n                    onClick = onTogglePlayPause,\n                    shape = RoundedCornerShape(14.dp),\n                    color = palette.accent,\n                    modifier = Modifier.weight(1.35f).height(58.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,\n                            contentDescription = \"Play/Pause\",\n                            tint = palette.onAccent,\n                            modifier = Modifier.size(36.dp)\n                        )\n                    }\n                }\n\n                Surface(\n                    onClick = onNext,\n                    shape = RoundedCornerShape(14.dp),\n                    color = Color(0xFF1A2234),\n                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),\n                    modifier = Modifier.weight(1f).height(58.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.SkipNext,\n                            contentDescription = \"Próximo\",\n                            tint = Color.White,\n                            modifier = Modifier.size(32.dp)\n                        )\n                    }\n                }\n\n                Surface(\n                    onClick = onEnterPip,\n                    shape = RoundedCornerShape(14.dp),\n                    color = Color(0xFF1A2234),\n                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),\n                    modifier = Modifier.width(56.dp).height(58.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.PictureInPictureAlt,\n                            contentDescription = \"PiP\",\n                            tint = palette.accent,\n                            modifier = Modifier.size(26.dp)\n                        )\n                    }\n                }\n            }\n\n            HorizontalDivider(color = Color(0x18FFFFFF))\n\n            // Seção Armazenamento: Todas (+ filtro), Pen Drive, Cartão SD, Interna\n            Text(\n                text = \"Armazenamento\",\n                color = Color(0xFFCBD5E1),\n                fontSize = 14.sp,\n                fontWeight = FontWeight.SemiBold\n            )\n\n            // Linha 1: Todas + Botão Filtro | Pen Drive\n            Row(\n                horizontalArrangement = Arrangement.spacedBy(8.dp),\n                modifier = Modifier.fillMaxWidth()\n            ) {\n                Row(\n                    horizontalArrangement = Arrangement.spacedBy(4.dp),\n                    modifier = Modifier.weight(1f)\n                ) {\n                    StorageOptionButton(\n                        label = \"Todas\",\n                        icon = Icons.Rounded.Layers,\n                        selected = activeStorageSlot == StorageSlot.ALL,\n                        onClick = { onSelectStorageSlot(StorageSlot.ALL) },\n                        modifier = Modifier.weight(1f)\n                    )\n                    Surface(\n                        onClick = onOpenAllFilter,\n                        shape = RoundedCornerShape(14.dp),\n                        color = if (hasCustomAllFilter) palette.accentContainer else Color(0xFF1A2234),\n                        border = BorderStroke(\n                            1.dp,\n                            if (hasCustomAllFilter) palette.accent else Color(0x26FFFFFF)\n                        ),\n                        modifier = Modifier.width(46.dp).height(54.dp)\n                    ) {\n                        Box(contentAlignment = Alignment.Center) {\n                            Icon(\n                                Icons.Rounded.Tune,\n                                contentDescription = \"Escolher pastas de Todas\",\n                                tint = if (hasCustomAllFilter) Color.White else palette.accent,\n                                modifier = Modifier.size(22.dp)\n                            )\n                        }\n                    }\n                }\n\n                StorageOptionButton(\n                    label = \"Pen Drive\",\n                    icon = Icons.Rounded.Usb,\n                    selected = activeStorageSlot == StorageSlot.USB,\n                    onClick = { onSelectStorageSlot(StorageSlot.USB) },\n                    modifier = Modifier.weight(1f)\n                )\n            }\n\n            // Linha 2: Cartão SD | Interna\n            Row(\n                horizontalArrangement = Arrangement.spacedBy(8.dp),\n                modifier = Modifier.fillMaxWidth()\n            ) {\n                StorageOptionButton(\n                    label = \"Cartão SD\",\n                    icon = Icons.Rounded.SdCard,\n                    selected = activeStorageSlot == StorageSlot.SD_CARD,\n                    onClick = { onSelectStorageSlot(StorageSlot.SD_CARD) },\n                    modifier = Modifier.weight(1f)\n                )\n\n                StorageOptionButton(\n                    label = \"Interna\",\n                    icon = Icons.Rounded.Storage,\n                    selected = activeStorageSlot == StorageSlot.INTERNAL,\n                    onClick = { onSelectStorageSlot(StorageSlot.INTERNAL) },\n                    modifier = Modifier.weight(1f)\n                )\n            }\n        }\n    }\n}\n\n@Composable\nprivate fun StorageOptionButton(\n    label: String,\n    icon: ImageVector,\n    selected: Boolean,\n    onClick: () -> Unit,\n    modifier: Modifier = Modifier\n) {\n    val palette = LocalAutoCinePalette.current\n    Surface(\n        onClick = onClick,\n        shape = RoundedCornerShape(14.dp),\n        color = if (selected) palette.accentDark else Color(0xFF1A2234),\n        border = BorderStroke(\n            width = if (selected) 1.5.dp else 1.dp,\n            color = if (selected) palette.accent else Color(0x26FFFFFF)\n        ),\n        modifier = modifier.height(54.dp)\n    ) {\n        Row(\n            verticalAlignment = Alignment.CenterVertically,\n            horizontalArrangement = Arrangement.Center,\n            modifier = Modifier.padding(horizontal = 10.dp)\n        ) {\n            Icon(\n                imageVector = icon,\n                contentDescription = null,\n                tint = if (selected) Color.White else palette.accent,\n                modifier = Modifier.size(20.dp)\n            )\n            Spacer(Modifier.width(6.dp))\n            Text(\n                text = label,\n                color = Color.White,\n                fontSize = 14.sp,\n                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,\n                maxLines = 1,\n                overflow = TextOverflow.Ellipsis\n            )\n        }\n    }\n}\n\n@Composable\nfun SplitScreenFileList(\n    state: PlayerUiState,\n    onSelectVideo: (VideoFileItem) -> Unit,\n    onOpenSubfolder: (FolderEntry) -> Unit,\n    onNavigateUp: () -> Unit,\n    onNavigateBreadcrumb: (Int) -> Unit,\n    onOpenAllFilter: () -> Unit,\n    onDismissAllFilter: () -> Unit,\n    onApplyAllFilter: (Set<String>?) -> Unit,\n    onOpenSettings: () -> Unit,\n    onDismissSettings: () -> Unit,\n    onSelectUiScale: (UiScaleLevel) -> Unit,\n    onSelectColorTheme: (AppColorTheme) -> Unit,\n    onSearchChange: (String) -> Unit,\n    onRefresh: () -> Unit,\n    onCycleSort: () -> Unit,\n    onRequestDelete: (VideoFileItem) -> Unit,\n    onConfirmDelete: () -> Unit,\n    onCancelDelete: () -> Unit,\n    modifier: Modifier = Modifier\n) {\n    val palette = LocalAutoCinePalette.current\n    val listState = rememberLazyListState()\n\n    val activeVideoIndex by remember(state.currentVideo?.id, state.visibleVideos) {\n        derivedStateOf {\n            state.visibleVideos.indexOfFirst { it.id == state.currentVideo?.id }\n        }\n    }\n\n    val subtitleText by remember(state.currentSubfolders.size, state.visibleVideos.size) {\n        derivedStateOf {\n            buildString {\n                if (state.currentSubfolders.isNotEmpty()) {\n                    append(\"${state.currentSubfolders.size} subpastas · \")\n                }\n                append(\"${state.visibleVideos.size} vídeos\")\n            }\n        }\n    }\n\n    LaunchedEffect(activeVideoIndex, state.currentSubfolders.size) {\n        if (activeVideoIndex >= 0) {\n            listState.animateScrollToItem(activeVideoIndex + state.currentSubfolders.size)\n        }\n    }\n\n    Column(\n        modifier = modifier\n            .background(Color(0xFF0A0D14))\n            .padding(14.dp)\n    ) {\n        // Cabeçalho da pasta + Filtrar (modo Todas) + Ordenar + Atualizar + Configurações (engrenagem)\n        Row(\n            verticalAlignment = Alignment.CenterVertically,\n            horizontalArrangement = Arrangement.SpaceBetween,\n            modifier = Modifier.fillMaxWidth()\n        ) {\n            Column(modifier = Modifier.weight(1f)) {\n                Text(\n                    text = state.folderName,\n                    color = Color.White,\n                    fontSize = 20.sp,\n                    fontWeight = FontWeight.Bold,\n                    maxLines = 1,\n                    overflow = TextOverflow.Ellipsis\n                )\n                Text(\n                    text = subtitleText,\n                    color = Color(0xFF94A3B8),\n                    fontSize = 14.sp\n                )\n            }\n\n            Row(\n                horizontalArrangement = Arrangement.spacedBy(8.dp),\n                verticalAlignment = Alignment.CenterVertically\n            ) {\n                if (state.isAllFoldersMode) {\n                    Surface(\n                        onClick = onOpenAllFilter,\n                        shape = RoundedCornerShape(12.dp),\n                        color = palette.accentContainer\n                    ) {\n                        Row(\n                            verticalAlignment = Alignment.CenterVertically,\n                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)\n                        ) {\n                            Icon(Icons.Rounded.Tune, contentDescription = \"Filtrar Pastas\", tint = Color.White, modifier = Modifier.size(20.dp))\n                            Spacer(Modifier.width(6.dp))\n                            Text(\"Filtrar\", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)\n                        }\n                    }\n                }\n                Surface(\n                    onClick = onCycleSort,\n                    shape = RoundedCornerShape(12.dp),\n                    color = Color(0xFF1E293B)\n                ) {\n                    Row(\n                        verticalAlignment = Alignment.CenterVertically,\n                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)\n                    ) {\n                        Icon(Icons.Rounded.SortByAlpha, contentDescription = \"Ordenar\", tint = palette.accent, modifier = Modifier.size(20.dp))\n                        Spacer(Modifier.width(6.dp))\n                        Text(state.sortOrder.label, color = Color.White, fontSize = 14.sp)\n                    }\n                }\n                Surface(\n                    onClick = onRefresh,\n                    shape = RoundedCornerShape(12.dp),\n                    color = Color(0xFF1E293B)\n                ) {\n                    Row(\n                        verticalAlignment = Alignment.CenterVertically,\n                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)\n                    ) {\n                        Icon(Icons.Rounded.Refresh, contentDescription = \"Atualizar\", tint = palette.accent, modifier = Modifier.size(20.dp))\n                        Spacer(Modifier.width(6.dp))\n                        Text(\"Atualizar\", color = Color.White, fontSize = 14.sp)\n                    }\n                }\n                Surface(\n                    onClick = onOpenSettings,\n                    shape = RoundedCornerShape(12.dp),\n                    color = Color(0xFF1E293B),\n                    border = BorderStroke(1.dp, Color(0x26FFFFFF)),\n                    modifier = Modifier.size(46.dp)\n                ) {\n                    Box(contentAlignment = Alignment.Center) {\n                        Icon(\n                            Icons.Rounded.Settings,\n                            contentDescription = \"Configurações\",\n                            tint = palette.accent,\n                            modifier = Modifier.size(22.dp)\n                        )\n                    }\n                }\n            }\n        }\n\n        // Barra de Breadcrumbs + botão Voltar fixo quando dentro de subpastas\n        if (!state.isAllFoldersMode && state.folderBreadcrumbs.isNotEmpty()) {\n            Spacer(Modifier.height(10.dp))\n            Row(\n                verticalAlignment = Alignment.CenterVertically,\n                modifier = Modifier.fillMaxWidth()\n            ) {\n                Surface(\n                    onClick = onNavigateUp,\n                    shape = RoundedCornerShape(10.dp),\n                    color = Color(0xFF1E293B)\n                ) {\n                    Row(\n                        verticalAlignment = Alignment.CenterVertically,\n                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)\n                    ) {\n                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = \"Voltar\", tint = palette.accent, modifier = Modifier.size(20.dp))\n                        Spacer(Modifier.width(6.dp))\n                        Text(\"Voltar\", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)\n                    }\n                }\n                Spacer(Modifier.width(10.dp))\n                Row(\n                    verticalAlignment = Alignment.CenterVertically,\n                    modifier = Modifier\n                        .weight(1f)\n                        .horizontalScroll(rememberScrollState())\n                ) {\n                    Text(\n                        text = state.rootFolderName,\n                        color = Color(0xFF94A3B8),\n                        fontSize = 14.sp,\n                        modifier = Modifier\n                            .clickable { onNavigateBreadcrumb(-1) }\n                            .padding(horizontal = 4.dp, vertical = 6.dp)\n                    )\n                    state.folderBreadcrumbs.forEachIndexed { idx, segment ->\n                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))\n                        val isLast = idx == state.folderBreadcrumbs.lastIndex\n                        Text(\n                            text = segment,\n                            color = if (isLast) palette.accent else Color(0xFFCBD5E1),\n                            fontSize = 14.sp,\n                            fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,\n                            modifier = Modifier\n                                .clickable { onNavigateBreadcrumb(idx) }\n                                .padding(horizontal = 4.dp, vertical = 6.dp)\n                        )\n                    }\n                }\n            }\n        }\n\n        Spacer(Modifier.height(10.dp))\n\n        // Campo de Busca Parcial (ignora maiúsculas/minúsculas e acentos) com botão visível \"Limpar\"\n        OutlinedTextField(\n            value = state.searchQuery,\n            onValueChange = onSearchChange,\n            placeholder = { Text(\"Pesquisar vídeo (ex: gode, forro)...\") },\n            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = palette.accent) },\n            trailingIcon = {\n                if (state.searchQuery.isNotEmpty()) {\n                    Surface(\n                        onClick = { onSearchChange(\"\") },\n                        shape = RoundedCornerShape(10.dp),\n                        color = palette.accentSoft,\n                        border = BorderStroke(1.dp, palette.accent),\n                        modifier = Modifier.padding(end = 6.dp)\n                    ) {\n                        Text(\n                            text = \"Limpar\",\n                            color = Color.White,\n                            fontSize = 13.sp,\n                            fontWeight = FontWeight.SemiBold,\n                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)\n                        )\n                    }\n                }\n            },\n            singleLine = true,\n            shape = RoundedCornerShape(14.dp),\n            colors = OutlinedTextFieldDefaults.colors(\n                focusedBorderColor = palette.accent,\n                unfocusedBorderColor = Color(0x33FFFFFF),\n                focusedTextColor = Color.White,\n                unfocusedTextColor = Color.White,\n                cursorColor = palette.accent\n            ),\n            modifier = Modifier.fillMaxWidth()\n        )\n\n        Spacer(Modifier.height(10.dp))\n\n        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {\n            // Cards grandes de Subpastas acima da lista de vídeos\n            if (!state.isAllFoldersMode && state.currentSubfolders.isNotEmpty()) {\n                items(\n                    items = state.currentSubfolders,\n                    key = { \"sub_${it.id}\" },\n                    contentType = { \"subfolder\" }\n                ) { sub ->\n                    Row(\n                        verticalAlignment = Alignment.CenterVertically,\n                        modifier = Modifier\n                            .fillMaxWidth()\n                            .padding(vertical = 4.dp)\n                            .clip(RoundedCornerShape(14.dp))\n                            .background(Color(0xFF111827))\n                            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(14.dp))\n                            .clickable { onOpenSubfolder(sub) }\n                            .padding(horizontal = 14.dp, vertical = 14.dp)\n                    ) {\n                        Box(\n                            contentAlignment = Alignment.Center,\n                            modifier = Modifier\n                                .size(48.dp)\n                                .clip(RoundedCornerShape(12.dp))\n                                .background(palette.accentSoft)\n                        ) {\n                            Icon(Icons.Rounded.Folder, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))\n                        }\n                        Spacer(Modifier.width(14.dp))\n                        Column(modifier = Modifier.weight(1f)) {\n                            Text(\n                                text = sub.name,\n                                color = Color.White,\n                                fontSize = 17.sp,\n                                fontWeight = FontWeight.SemiBold,\n                                maxLines = 1,\n                                overflow = TextOverflow.Ellipsis\n                            )\n                            Text(\n                                text = if (sub.videoCount > 0) \"${sub.videoCount} vídeos · Toque para abrir\" else \"Pasta · Toque para abrir\",\n                                color = Color(0xFF94A3B8),\n                                fontSize = 13.sp\n                            )\n                        }\n                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))\n                    }\n                }\n            }\n\n            itemsIndexed(\n                items = state.visibleVideos,\n                key = { _, item -> item.id },\n                contentType = { _, _ -> \"video\" }\n            ) { index, item ->\n                val isCurrent = item.id == state.currentVideo?.id\n                Row(\n                    verticalAlignment = Alignment.CenterVertically,\n                    modifier = Modifier\n                        .fillMaxWidth()\n                        .background(if (isCurrent) palette.accentSoft else Color.Transparent, RoundedCornerShape(14.dp))\n                        .clickable { onSelectVideo(item) }\n                        .padding(horizontal = 12.dp, vertical = 10.dp)\n                ) {\n                    Text(\n                        text = \"%02d\".format(index + 1),\n                        color = if (isCurrent) palette.accent else Color(0xFF64748B),\n                        fontSize = 15.sp,\n                        fontWeight = FontWeight.Bold,\n                        modifier = Modifier.width(30.dp)\n                    )\n                    Spacer(Modifier.width(8.dp))\n                    VideoListThumbnail(\n                        item = item,\n                        isCurrent = isCurrent,\n                        isPlaying = state.isPlaying\n                    )\n                    Spacer(Modifier.width(12.dp))\n                    Column(modifier = Modifier.weight(1f)) {\n                        Text(\n                            text = item.name,\n                            color = if (isCurrent) Color.White else Color(0xFFE2E8F0),\n                            fontSize = 16.sp,\n                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,\n                            maxLines = 1,\n                            overflow = TextOverflow.Ellipsis\n                        )\n                        if (state.isAllFoldersMode && item.folderName.isNotEmpty()) {\n                            Text(\n                                text = item.folderName,\n                                color = palette.accent,\n                                fontSize = 12.sp,\n                                maxLines = 1,\n                                overflow = TextOverflow.Ellipsis\n                            )\n                        }\n                    }\n                    IconButton(onClick = { onRequestDelete(item) }, modifier = Modifier.size(52.dp)) {\n                        Icon(\n                            Icons.Rounded.Delete,\n                            contentDescription = \"Excluir ${item.name}\",\n                            tint = Color(0xFF94A3B8)\n                        )\n                    }\n                }\n                HorizontalDivider(color = Color(0x14FFFFFF))\n            }\n        }\n    }\n\n    // Modal de Configurações (Tamanho da Interface + Tema de Cores)\n    if (state.isSettingsOpen) {\n        SettingsDialog(\n            currentScale = state.uiScaleLevel,\n            currentTheme = state.colorTheme,\n            onSelectScale = onSelectUiScale,\n            onSelectTheme = onSelectColorTheme,\n            onDismiss = onDismissSettings\n        )\n    }\n\n    // Diálogo manual de seleção de pastas para o modo \"Todas\"\n    if (state.isAllFilterDialogOpen) {\n        AllFoldersFilterDialog(\n            folders = state.selectableAllFolders,\n            initialSelectedIds = state.selectedAllFolderIds,\n            onDismiss = onDismissAllFilter,\n            onApply = onApplyAllFilter\n        )\n    }\n\n    // Janela de confirmação de exclusão direta\n    val toDelete = state.pendingDeleteItem\n    if (toDelete != null) {\n        AlertDialog(\n            onDismissRequest = onCancelDelete,\n            title = { Text(\"Excluir arquivo?\") },\n            text = { Text(\"Deseja apagar permanentemente \\\"${toDelete.name}\\\" do armazenamento?\") },\n            confirmButton = {\n                Button(\n                    onClick = onConfirmDelete,\n                    colors = ButtonDefaults.buttonColors(\n                        containerColor = Color(0xFFEF4444),\n                        contentColor = Color.White\n                    )\n                ) {\n                    Text(\"Excluir\")\n                }\n            },\n            dismissButton = {\n                TextButton(onClick = onCancelDelete) {\n                    Text(\"Cancelar\", color = Color(0xFFCBD5E1))\n                }\n            }\n        )\n    }\n}\n\n@Composable\nprivate fun SettingsDialog(\n    currentScale: UiScaleLevel,\n    currentTheme: AppColorTheme,\n    onSelectScale: (UiScaleLevel) -> Unit,\n    onSelectTheme: (AppColorTheme) -> Unit,\n    onDismiss: () -> Unit\n) {\n    val palette = LocalAutoCinePalette.current\n\n    AlertDialog(\n        onDismissRequest = onDismiss,\n        containerColor = Color(0xFF0E1420),\n        titleContentColor = Color.White,\n        title = {\n            Row(verticalAlignment = Alignment.CenterVertically) {\n                Icon(\n                    Icons.Rounded.Settings,\n                    contentDescription = null,\n                    tint = palette.accent,\n                    modifier = Modifier.size(24.dp)\n                )\n                Spacer(Modifier.width(10.dp))\n                Text(\n                    text = \"Configurações\",\n                    fontSize = 20.sp,\n                    fontWeight = FontWeight.Bold\n                )\n            }\n        },\n        text = {\n            Column(\n                verticalArrangement = Arrangement.spacedBy(14.dp),\n                modifier = Modifier\n                    .fillMaxWidth()\n                    .heightIn(max = 360.dp)\n                    .verticalScroll(rememberScrollState())\n            ) {\n                // 1. Tamanho da Interface (4 níveis fixos)\n                Text(\n                    text = \"Tamanho da Interface\",\n                    color = Color(0xFFCBD5E1),\n                    fontSize = 14.sp,\n                    fontWeight = FontWeight.SemiBold\n                )\n\n                val scaleRows = remember { UiScaleLevel.entries.chunked(2) }\n                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {\n                    scaleRows.forEach { rowLevels ->\n                        Row(\n                            horizontalArrangement = Arrangement.spacedBy(8.dp),\n                            modifier = Modifier.fillMaxWidth()\n                        ) {\n                            rowLevels.forEach { level ->\n                                val selected = level == currentScale\n                                Surface(\n                                    onClick = { onSelectScale(level) },\n                                    shape = RoundedCornerShape(12.dp),\n                                    color = if (selected) palette.accentDark else Color(0xFF1A2234),\n                                    border = BorderStroke(\n                                        width = if (selected) 1.5.dp else 1.dp,\n                                        color = if (selected) palette.accent else Color(0x26FFFFFF)\n                                    ),\n                                    modifier = Modifier.weight(1f).height(48.dp)\n                                ) {\n                                    Row(\n                                        verticalAlignment = Alignment.CenterVertically,\n                                        horizontalArrangement = Arrangement.Center,\n                                        modifier = Modifier.padding(horizontal = 8.dp)\n                                    ) {\n                                        if (selected) {\n                                            Icon(\n                                                Icons.Rounded.Check,\n                                                contentDescription = null,\n                                                tint = Color.White,\n                                                modifier = Modifier.size(16.dp)\n                                            )\n                                            Spacer(Modifier.width(4.dp))\n                                        }\n                                        Text(\n                                            text = level.label,\n                                            color = Color.White,\n                                            fontSize = 13.sp,\n                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,\n                                            maxLines = 1,\n                                            overflow = TextOverflow.Ellipsis\n                                        )\n                                    }\n                                }\n                            }\n                        }\n                    }\n                }\n\n                HorizontalDivider(color = Color(0x18FFFFFF))\n\n                // 2. Tema de Cores (6 conjuntos pré-definidos)\n                Text(\n                    text = \"Tema de Cores\",\n                    color = Color(0xFFCBD5E1),\n                    fontSize = 14.sp,\n                    fontWeight = FontWeight.SemiBold\n                )\n\n                val themeRows = remember { AppColorTheme.entries.chunked(2) }\n                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {\n                    themeRows.forEach { rowThemes ->\n                        Row(\n                            horizontalArrangement = Arrangement.spacedBy(8.dp),\n                            modifier = Modifier.fillMaxWidth()\n                        ) {\n                            rowThemes.forEach { theme ->\n                                val selected = theme == currentTheme\n                                Surface(\n                                    onClick = { onSelectTheme(theme) },\n                                    shape = RoundedCornerShape(12.dp),\n                                    color = if (selected) theme.accentSoft else Color(0xFF1A2234),\n                                    border = BorderStroke(\n                                        width = if (selected) 1.5.dp else 1.dp,\n                                        color = if (selected) theme.accent else Color(0x26FFFFFF)\n                                    ),\n                                    modifier = Modifier.weight(1f).height(48.dp)\n                                ) {\n                                    Row(\n                                        verticalAlignment = Alignment.CenterVertically,\n                                        modifier = Modifier.padding(horizontal = 10.dp)\n                                    ) {\n                                        Box(\n                                            contentAlignment = Alignment.Center,\n                                            modifier = Modifier\n                                                .size(20.dp)\n                                                .clip(CircleShape)\n                                                .background(theme.accent)\n                                        ) {\n                                            if (selected) {\n                                                Icon(\n                                                    Icons.Rounded.Check,\n                                                    contentDescription = null,\n                                                    tint = theme.onAccent,\n                                                    modifier = Modifier.size(14.dp)\n                                                )\n                                            }\n                                        }\n                                        Spacer(Modifier.width(8.dp))\n                                        Text(\n                                            text = theme.label,\n                                            color = Color.White,\n                                            fontSize = 12.sp,\n                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,\n                                            maxLines = 1,\n                                            overflow = TextOverflow.Ellipsis\n                                        )\n                                    }\n                                }\n                            }\n                        }\n                    }\n                }\n            }\n        },\n        confirmButton = {\n            Button(\n                onClick = onDismiss,\n                colors = ButtonDefaults.buttonColors(\n                    containerColor = palette.accent,\n                    contentColor = palette.onAccent\n                )\n            ) {\n                Text(\"Concluir\", fontWeight = FontWeight.Bold)\n            }\n        }\n    )\n}\n\nprivate data class FolderOriginGroup(\n    val label: String,\n    val folders: List<FolderEntry>\n)\n\n@Composable\nprivate fun AllFoldersFilterDialog(\n    folders: List<FolderEntry>,\n    initialSelectedIds: Set<String>?,\n    onDismiss: () -> Unit,\n    onApply: (Set<String>?) -> Unit\n) {\n    val palette = LocalAutoCinePalette.current\n    var draftSelected by remember(folders, initialSelectedIds) {\n        mutableStateOf(\n            initialSelectedIds ?: folders.map { it.id }.toSet()\n        )\n    }\n\n    // Tudo inicia RECOLHIDO por padrão: apenas os grupos principais (Pen Drive, Cartão SD, Memória Interna)\n    // aparecem fechados inicialmente, e cada nível expande sob demanda ao tocar na seta/grupo.\n    var expandedGroups by remember(folders) { mutableStateOf(emptySet<String>()) }\n    var expandedFolderIds by remember(folders) { mutableStateOf(emptySet<String>()) }\n\n    val groups = remember(folders) {\n        val priorityOrder = listOf(\"Pen Drive\", \"Cartão SD\", \"Memória Interna\")\n        val grouped = folders.groupBy { it.sourceLabel.ifBlank { \"Memória Interna\" } }\n        val orderedKeys = priorityOrder.filter { it in grouped.keys } +\n            grouped.keys.filter { it !in priorityOrder }.sorted()\n        orderedKeys.map { label ->\n            FolderOriginGroup(label = label, folders = grouped[label].orEmpty())\n        }\n    }\n\n    // Mapeia rapidamente quais pastas possuem subpastas filhas dentro do mesmo grupo/prefixo\n    val childrenInfoByGroup = remember(groups) {\n        groups.associate { group ->\n            val byPrefixAndPath = HashMap<Pair<String, List<String>>, FolderEntry>()\n            val hasChildrenSet = HashSet<String>()\n            val parentIdByFolderId = HashMap<String, String>()\n\n            group.folders.forEach { entry ->\n                val prefix = entry.id.substringBefore(':', \"\")\n                byPrefixAndPath[prefix to entry.relativePath] = entry\n            }\n            group.folders.forEach { entry ->\n                if (entry.relativePath.isNotEmpty()) {\n                    val prefix = entry.id.substringBefore(':', \"\")\n                    val parentPath = entry.relativePath.dropLast(1)\n                    val parent = byPrefixAndPath[prefix to parentPath]\n                    if (parent != null && parent.id != entry.id) {\n                        hasChildrenSet.add(parent.id)\n                        parentIdByFolderId[entry.id] = parent.id\n                    }\n                }\n            }\n            group.label to (hasChildrenSet to parentIdByFolderId)\n        }\n    }\n\n    AlertDialog(\n        onDismissRequest = onDismiss,\n        containerColor = Color(0xFF0E1420),\n        titleContentColor = Color.White,\n        title = {\n            Text(\n                text = \"Selecionar Pastas para \\\"Todas\\\"\",\n                fontSize = 19.sp,\n                fontWeight = FontWeight.Bold\n            )\n        },\n        text = {\n            Column(modifier = Modifier.fillMaxWidth()) {\n                Row(\n                    horizontalArrangement = Arrangement.spacedBy(8.dp),\n                    modifier = Modifier.fillMaxWidth()\n                ) {\n                    TextButton(onClick = { draftSelected = folders.map { it.id }.toSet() }) {\n                        Text(\"Marcar todas\", color = palette.accent)\n                    }\n                    TextButton(onClick = { draftSelected = emptySet() }) {\n                        Text(\"Limpar\", color = Color(0xFF94A3B8))\n                    }\n                    if (expandedGroups.isNotEmpty() || expandedFolderIds.isNotEmpty()) {\n                        TextButton(\n                            onClick = {\n                                expandedGroups = emptySet()\n                                expandedFolderIds = emptySet()\n                            }\n                        ) {\n                            Text(\"Recolher\", color = Color(0xFF94A3B8))\n                        }\n                    }\n                }\n\n                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {\n                    groups.forEach { group ->\n                        val isGroupExpanded = group.label in expandedGroups\n                        val groupIds = group.folders.map { it.id }.toSet()\n                        val selectedCount = group.folders.count { it.id in draftSelected }\n                        val allInGroupSelected = groupIds.isNotEmpty() && selectedCount == groupIds.size\n                        val totalVideosInGroup = group.folders.sumOf { it.videoCount.coerceAtLeast(0) }\n                        val groupIcon = when (group.label) {\n                            \"Pen Drive\" -> Icons.Rounded.Usb\n                            \"Cartão SD\" -> Icons.Rounded.SdCard\n                            else -> Icons.Rounded.Storage\n                        }\n\n                        item(key = \"group_${group.label}\") {\n                            Row(\n                                verticalAlignment = Alignment.CenterVertically,\n                                modifier = Modifier\n                                    .fillMaxWidth()\n                                    .padding(vertical = 4.dp)\n                                    .clip(RoundedCornerShape(12.dp))\n                                    .background(Color(0xFF151E2E))\n                                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(12.dp))\n                                    .clickable {\n                                        expandedGroups = if (isGroupExpanded) {\n                                            expandedGroups - group.label\n                                        } else {\n                                            expandedGroups + group.label\n                                        }\n                                    }\n                                    .padding(horizontal = 8.dp, vertical = 8.dp)\n                            ) {\n                                Icon(\n                                    imageVector = if (isGroupExpanded) {\n                                        Icons.Rounded.KeyboardArrowDown\n                                    } else {\n                                        Icons.Rounded.ChevronRight\n                                    },\n                                    contentDescription = if (isGroupExpanded) \"Recolher ${group.label}\" else \"Expandir ${group.label}\",\n                                    tint = palette.accent,\n                                    modifier = Modifier.size(26.dp)\n                                )\n                                Checkbox(\n                                    checked = allInGroupSelected,\n                                    onCheckedChange = { checked ->\n                                        draftSelected = if (checked) {\n                                            draftSelected + groupIds\n                                        } else {\n                                            draftSelected - groupIds\n                                        }\n                                    },\n                                    colors = CheckboxDefaults.colors(checkedColor = palette.accent)\n                                )\n                                Icon(\n                                    imageVector = groupIcon,\n                                    contentDescription = null,\n                                    tint = palette.accent,\n                                    modifier = Modifier.size(20.dp)\n                                )\n                                Spacer(Modifier.width(8.dp))\n                                Column(modifier = Modifier.weight(1f)) {\n                                    Text(\n                                        text = group.label,\n                                        color = Color.White,\n                                        fontSize = 15.sp,\n                                        fontWeight = FontWeight.Bold,\n                                        maxLines = 1,\n                                        overflow = TextOverflow.Ellipsis\n                                    )\n                                    Text(\n                                        text = \"$selectedCount/${group.folders.size} pastas · $totalVideosInGroup vídeos\",\n                                        color = Color(0xFF94A3B8),\n                                        fontSize = 12.sp\n                                    )\n                                }\n                            }\n                        }\n\n                        if (isGroupExpanded) {\n                            val (hasChildrenSet, parentIdMap) = childrenInfoByGroup[group.label]\n                                ?: (emptySet<String>() to emptyMap<String, String>())\n\n                            val visibleInGroup = group.folders.filter { entry ->\n                                var parentId = parentIdMap[entry.id]\n                                var ancestorsExpanded = true\n                                while (parentId != null) {\n                                    if (parentId !in expandedFolderIds) {\n                                        ancestorsExpanded = false\n                                        break\n                                    }\n                                    parentId = parentIdMap[parentId]\n                                }\n                                ancestorsExpanded\n                            }\n\n                            items(visibleInGroup, key = { \"folder_${group.label}_${it.id}\" }) { folder ->\n                                val checked = folder.id in draftSelected\n                                val hasSubfolders = folder.id in hasChildrenSet\n                                val isFolderExpanded = folder.id in expandedFolderIds\n                                val indentDp = (16 + folder.depth * 18).coerceAtMost(96)\n\n                                Row(\n                                    verticalAlignment = Alignment.CenterVertically,\n                                    modifier = Modifier\n                                        .fillMaxWidth()\n                                        .clickable {\n                                            draftSelected = if (checked) {\n                                                draftSelected - folder.id\n                                            } else {\n                                                draftSelected + folder.id\n                                            }\n                                        }\n                                        .padding(start = indentDp.dp, top = 4.dp, bottom = 4.dp, end = 6.dp)\n                                ) {\n                                    if (hasSubfolders) {\n                                        IconButton(\n                                            onClick = {\n                                                expandedFolderIds = if (isFolderExpanded) {\n                                                    expandedFolderIds - folder.id\n                                                } else {\n                                                    expandedFolderIds + folder.id\n                                                }\n                                            },\n                                            modifier = Modifier.size(36.dp)\n                                        ) {\n                                            Icon(\n                                                imageVector = if (isFolderExpanded) {\n                                                    Icons.Rounded.KeyboardArrowDown\n                                                } else {\n                                                    Icons.Rounded.ChevronRight\n                                                },\n                                                contentDescription = if (isFolderExpanded) \"Recolher ${folder.name}\" else \"Expandir ${folder.name}\",\n                                                tint = palette.accent,\n                                                modifier = Modifier.size(22.dp)\n                                            )\n                                        }\n                                    } else {\n                                        Spacer(Modifier.width(36.dp))\n                                    }\n\n                                    Checkbox(\n                                        checked = checked,\n                                        onCheckedChange = { isChecked ->\n                                            draftSelected = if (isChecked) {\n                                                draftSelected + folder.id\n                                            } else {\n                                                draftSelected - folder.id\n                                            }\n                                        },\n                                        colors = CheckboxDefaults.colors(checkedColor = palette.accent)\n                                    )\n                                    Spacer(Modifier.width(4.dp))\n                                    Column(modifier = Modifier.weight(1f)) {\n                                        Text(\n                                            text = folder.name,\n                                            color = Color.White,\n                                            fontSize = 14.sp,\n                                            fontWeight = FontWeight.Medium,\n                                            maxLines = 1,\n                                            overflow = TextOverflow.Ellipsis\n                                        )\n                                        val countText = if (folder.videoCount >= 0) {\n                                            \"${folder.videoCount} vídeos\"\n                                        } else {\n                                            \"Pasta\"\n                                        }\n                                        Text(\n                                            text = if (hasSubfolders) \"$countText · com subpastas\" else countText,\n                                            color = Color(0xFF94A3B8),\n                                            fontSize = 12.sp\n                                        )\n                                    }\n                                }\n                            }\n                        }\n                    }\n                }\n            }\n        },\n        confirmButton = {\n            Button(\n                onClick = {\n                    val allIds = folders.map { it.id }.toSet()\n                    val normalized = if (draftSelected == allIds) null else draftSelected\n                    onApply(normalized)\n                },\n                colors = ButtonDefaults.buttonColors(\n                    containerColor = palette.accentDark,\n                    contentColor = Color.White\n                )\n            ) {\n                Text(\"Aplicar\")\n            }\n        },\n        dismissButton = {\n            TextButton(onClick = onDismiss) {\n                Text(\"Cancelar\", color = Color(0xFFCBD5E1))\n            }\n        }\n    )\n}\n",
+    path: 'app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Tela dividida com mini-player limpo e rolável, diálogo recolhido, miniaturas LruCache e opção Iniciar com a Multimídia',
+    content: `package com.autocine.player.ui
+
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import android.util.LruCache
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.Layers
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PictureInPictureAlt
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.SdCard
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.SortByAlpha
+import androidx.compose.material.icons.rounded.Storage
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.Usb
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.autocine.player.data.FolderEntry
+import com.autocine.player.data.StorageSlot
+import com.autocine.player.data.VideoFileItem
+import com.autocine.player.ui.theme.AppColorTheme
+import com.autocine.player.ui.theme.LocalAutoCinePalette
+import com.autocine.player.ui.theme.UiScaleLevel
+import com.autocine.player.viewmodel.PlayerUiState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.util.Collections
+
+private object VideoThumbnailMemoryCache {
+    private val cache = LruCache<String, ImageBitmap>(60)
+    private val failedKeys = Collections.synchronizedSet(HashSet<String>())
+    val decodeSemaphore = Semaphore(2)
+
+    fun get(key: String): ImageBitmap? = cache.get(key)
+    fun hasFailed(key: String): Boolean = failedKeys.contains(key)
+    fun put(key: String, bitmap: ImageBitmap) {
+        cache.put(key, bitmap)
+    }
+    fun markFailed(key: String) {
+        if (failedKeys.size > 300) failedKeys.clear()
+        failedKeys.add(key)
+    }
+}
+
+@Composable
+private fun VideoListThumbnail(
+    item: VideoFileItem,
+    isCurrent: Boolean,
+    isPlaying: Boolean
+) {
+    val palette = LocalAutoCinePalette.current
+    val context = LocalContext.current
+    var bitmap by remember(item.id) { mutableStateOf(VideoThumbnailMemoryCache.get(item.id)) }
+
+    LaunchedEffect(item.id) {
+        if (bitmap == null && !VideoThumbnailMemoryCache.hasFailed(item.id)) {
+            // Pequeno atraso antes de acessar o Pen Drive: se o usuário rolar rapidamente,
+            // a coroutine é cancelada automaticamente antes de abrir o MediaMetadataRetriever.
+            delay(120L)
+            val loaded = withContext(Dispatchers.IO) {
+                ensureActive()
+                VideoThumbnailMemoryCache.decodeSemaphore.withPermit {
+                    ensureActive()
+                    VideoThumbnailMemoryCache.get(item.id)?.let { return@withPermit it }
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, item.uri)
+                        ensureActive()
+                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                            retriever.getScaledFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                                192,
+                                108
+                            )
+                        } else {
+                            retriever.getFrameAtTime(
+                                1_500_000L,
+                                MediaMetadataRetriever.OPTION_CLOSEST_SYNC
+                            )?.let { full ->
+                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
+                                if (scaled != full) full.recycle()
+                                scaled
+                            }
+                        }
+                        frame?.asImageBitmap()
+                    } catch (ce: CancellationException) {
+                        throw ce
+                    } catch (_: Throwable) {
+                        null
+                    } finally {
+                        runCatching { retriever.release() }
+                    }
+                }
+            }
+            if (loaded != null) {
+                VideoThumbnailMemoryCache.put(item.id, loaded)
+                bitmap = loaded
+            } else {
+                VideoThumbnailMemoryCache.markFailed(item.id)
+            }
+        }
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .width(96.dp)
+            .height(54.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF0F172A))
+            .border(
+                width = if (isCurrent) 2.dp else 1.dp,
+                color = if (isCurrent) palette.accent else Color(0x1FFFFFFF),
+                shape = RoundedCornerShape(10.dp)
+            )
+    ) {
+        val bmp = bitmap
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = "Miniatura de \${item.name}",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Rounded.Movie,
+                contentDescription = null,
+                tint = Color(0xFF475569),
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        if (isCurrent) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x59000000))
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(palette.accent)
+                ) {
+                    Icon(
+                        imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        contentDescription = null,
+                        tint = palette.onAccent,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SplitScreenLeftPane(
+    isPlaying: Boolean,
+    activeStorageSlot: StorageSlot,
+    hasCustomAllFilter: Boolean,
+    videoSurface: @Composable () -> Unit,
+    onExpandVideo: () -> Unit,
+    onTogglePlayPause: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onEnterPip: () -> Unit,
+    onSelectStorageSlot: (StorageSlot) -> Unit,
+    onOpenAllFilter: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalAutoCinePalette.current
+
+    Column(
+        modifier = modifier
+            .background(Color(0xFF0C1018), RoundedCornerShape(18.dp))
+            .padding(12.dp)
+    ) {
+        // Quadro do vídeo minimizado (toque para expandir instantaneamente para tela cheia)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color.Black)
+                .clickable { onExpandVideo() }
+        ) {
+            videoSurface()
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Conteúdo abaixo do vídeo com rolagem vertical para nunca cortar em telas menores
+        Column(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Controles principais: Anterior, Play/Pause, Próximo, PiP
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    onClick = onPrev,
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF1A2234),
+                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),
+                    modifier = Modifier.weight(1f).height(58.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipPrevious,
+                            contentDescription = "Anterior",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onTogglePlayPause,
+                    shape = RoundedCornerShape(14.dp),
+                    color = palette.accent,
+                    modifier = Modifier.weight(1.35f).height(58.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            tint = palette.onAccent,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onNext,
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF1A2234),
+                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),
+                    modifier = Modifier.weight(1f).height(58.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.SkipNext,
+                            contentDescription = "Próximo",
+                            tint = Color.White,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    onClick = onEnterPip,
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFF1A2234),
+                    border = BorderStroke(1.dp, Color(0x1FFFFFFF)),
+                    modifier = Modifier.width(56.dp).height(58.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.PictureInPictureAlt,
+                            contentDescription = "PiP",
+                            tint = palette.accent,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0x18FFFFFF))
+
+            // Seção Armazenamento: Todas (+ filtro), Pen Drive, Cartão SD, Interna
+            Text(
+                text = "Armazenamento",
+                color = Color(0xFFCBD5E1),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            // Linha 1: Todas + Botão Filtro | Pen Drive
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    StorageOptionButton(
+                        label = "Todas",
+                        icon = Icons.Rounded.Layers,
+                        selected = activeStorageSlot == StorageSlot.ALL,
+                        onClick = { onSelectStorageSlot(StorageSlot.ALL) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    Surface(
+                        onClick = onOpenAllFilter,
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (hasCustomAllFilter) palette.accentContainer else Color(0xFF1A2234),
+                        border = BorderStroke(
+                            1.dp,
+                            if (hasCustomAllFilter) palette.accent else Color(0x26FFFFFF)
+                        ),
+                        modifier = Modifier.width(46.dp).height(54.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Rounded.Tune,
+                                contentDescription = "Escolher pastas de Todas",
+                                tint = if (hasCustomAllFilter) Color.White else palette.accent,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+
+                StorageOptionButton(
+                    label = "Pen Drive",
+                    icon = Icons.Rounded.Usb,
+                    selected = activeStorageSlot == StorageSlot.USB,
+                    onClick = { onSelectStorageSlot(StorageSlot.USB) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Linha 2: Cartão SD | Interna
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                StorageOptionButton(
+                    label = "Cartão SD",
+                    icon = Icons.Rounded.SdCard,
+                    selected = activeStorageSlot == StorageSlot.SD_CARD,
+                    onClick = { onSelectStorageSlot(StorageSlot.SD_CARD) },
+                    modifier = Modifier.weight(1f)
+                )
+
+                StorageOptionButton(
+                    label = "Interna",
+                    icon = Icons.Rounded.Storage,
+                    selected = activeStorageSlot == StorageSlot.INTERNAL,
+                    onClick = { onSelectStorageSlot(StorageSlot.INTERNAL) },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageOptionButton(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalAutoCinePalette.current
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) palette.accentDark else Color(0xFF1A2234),
+        border = BorderStroke(
+            width = if (selected) 1.5.dp else 1.dp,
+            color = if (selected) palette.accent else Color(0x26FFFFFF)
+        ),
+        modifier = modifier.height(54.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(horizontal = 10.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (selected) Color.White else palette.accent,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun SplitScreenFileList(
+    state: PlayerUiState,
+    onSelectVideo: (VideoFileItem) -> Unit,
+    onOpenSubfolder: (FolderEntry) -> Unit,
+    onNavigateUp: () -> Unit,
+    onNavigateBreadcrumb: (Int) -> Unit,
+    onOpenAllFilter: () -> Unit,
+    onDismissAllFilter: () -> Unit,
+    onApplyAllFilter: (Set<String>?) -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismissSettings: () -> Unit,
+    onSelectUiScale: (UiScaleLevel) -> Unit,
+    onSelectColorTheme: (AppColorTheme) -> Unit,
+    onToggleStartOnBoot: (Boolean) -> Unit,
+    onSearchChange: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onCycleSort: () -> Unit,
+    onRequestDelete: (VideoFileItem) -> Unit,
+    onConfirmDelete: () -> Unit,
+    onCancelDelete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalAutoCinePalette.current
+    val listState = rememberLazyListState()
+
+    val activeVideoIndex by remember(state.currentVideo?.id, state.visibleVideos) {
+        derivedStateOf {
+            state.visibleVideos.indexOfFirst { it.id == state.currentVideo?.id }
+        }
+    }
+
+    val subtitleText by remember(state.currentSubfolders.size, state.visibleVideos.size) {
+        derivedStateOf {
+            buildString {
+                if (state.currentSubfolders.isNotEmpty()) {
+                    append("\${state.currentSubfolders.size} subpastas · ")
+                }
+                append("\${state.visibleVideos.size} vídeos")
+            }
+        }
+    }
+
+    LaunchedEffect(activeVideoIndex, state.currentSubfolders.size) {
+        if (activeVideoIndex >= 0) {
+            listState.animateScrollToItem(activeVideoIndex + state.currentSubfolders.size)
+        }
+    }
+
+    Column(
+        modifier = modifier
+            .background(Color(0xFF0A0D14))
+            .padding(14.dp)
+    ) {
+        // Cabeçalho da pasta + Filtrar (modo Todas) + Ordenar + Atualizar + Configurações (engrenagem)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = state.folderName,
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = subtitleText,
+                    color = Color(0xFF94A3B8),
+                    fontSize = 14.sp
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (state.isAllFoldersMode) {
+                    Surface(
+                        onClick = onOpenAllFilter,
+                        shape = RoundedCornerShape(12.dp),
+                        color = palette.accentContainer
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
+                        ) {
+                            Icon(Icons.Rounded.Tune, contentDescription = "Filtrar Pastas", tint = Color.White, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Filtrar", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                Surface(
+                    onClick = onCycleSort,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
+                    ) {
+                        Icon(Icons.Rounded.SortByAlpha, contentDescription = "Ordenar", tint = palette.accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(state.sortOrder.label, color = Color.White, fontSize = 14.sp)
+                    }
+                }
+                Surface(
+                    onClick = onRefresh,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp)
+                    ) {
+                        Icon(Icons.Rounded.Refresh, contentDescription = "Atualizar", tint = palette.accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Atualizar", color = Color.White, fontSize = 14.sp)
+                    }
+                }
+                Surface(
+                    onClick = onOpenSettings,
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1E293B),
+                    border = BorderStroke(1.dp, Color(0x26FFFFFF)),
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Rounded.Settings,
+                            contentDescription = "Configurações",
+                            tint = palette.accent,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // Barra de Breadcrumbs + botão Voltar fixo quando dentro de subpastas
+        if (!state.isAllFoldersMode && state.folderBreadcrumbs.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Surface(
+                    onClick = onNavigateUp,
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Voltar", tint = palette.accent, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Voltar", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = state.rootFolderName,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable { onNavigateBreadcrumb(-1) }
+                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                    )
+                    state.folderBreadcrumbs.forEachIndexed { idx, segment ->
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(18.dp))
+                        val isLast = idx == state.folderBreadcrumbs.lastIndex
+                        Text(
+                            text = segment,
+                            color = if (isLast) palette.accent else Color(0xFFCBD5E1),
+                            fontSize = 14.sp,
+                            fontWeight = if (isLast) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier
+                                .clickable { onNavigateBreadcrumb(idx) }
+                                .padding(horizontal = 4.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(10.dp))
+
+        // Campo de Busca Parcial (ignora maiúsculas/minúsculas e acentos) com botão visível "Limpar"
+        OutlinedTextField(
+            value = state.searchQuery,
+            onValueChange = onSearchChange,
+            placeholder = { Text("Pesquisar vídeo (ex: gode, forro)...") },
+            leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = palette.accent) },
+            trailingIcon = {
+                if (state.searchQuery.isNotEmpty()) {
+                    Surface(
+                        onClick = { onSearchChange("") },
+                        shape = RoundedCornerShape(10.dp),
+                        color = palette.accentSoft,
+                        border = BorderStroke(1.dp, palette.accent),
+                        modifier = Modifier.padding(end = 6.dp)
+                    ) {
+                        Text(
+                            text = "Limpar",
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = palette.accent,
+                unfocusedBorderColor = Color(0x33FFFFFF),
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                cursorColor = palette.accent
+            ),
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            // Cards grandes de Subpastas acima da lista de vídeos
+            if (!state.isAllFoldersMode && state.currentSubfolders.isNotEmpty()) {
+                items(
+                    items = state.currentSubfolders,
+                    key = { "sub_\${it.id}" },
+                    contentType = { "subfolder" }
+                ) { sub ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color(0xFF111827))
+                            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(14.dp))
+                            .clickable { onOpenSubfolder(sub) }
+                            .padding(horizontal = 14.dp, vertical = 14.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(palette.accentSoft)
+                        ) {
+                            Icon(Icons.Rounded.Folder, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
+                        }
+                        Spacer(Modifier.width(14.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = sub.name,
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (sub.videoCount > 0) "\${sub.videoCount} vídeos · Toque para abrir" else "Pasta · Toque para abrir",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 13.sp
+                            )
+                        }
+                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
+                    }
+                }
+            }
+
+            itemsIndexed(
+                items = state.visibleVideos,
+                key = { _, item -> item.id },
+                contentType = { _, _ -> "video" }
+            ) { index, item ->
+                val isCurrent = item.id == state.currentVideo?.id
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isCurrent) palette.accentSoft else Color.Transparent, RoundedCornerShape(14.dp))
+                        .clickable { onSelectVideo(item) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "%02d".format(index + 1),
+                        color = if (isCurrent) palette.accent else Color(0xFF64748B),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.width(30.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    VideoListThumbnail(
+                        item = item,
+                        isCurrent = isCurrent,
+                        isPlaying = state.isPlaying
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.name,
+                            color = if (isCurrent) Color.White else Color(0xFFE2E8F0),
+                            fontSize = 16.sp,
+                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (state.isAllFoldersMode && item.folderName.isNotEmpty()) {
+                            Text(
+                                text = item.folderName,
+                                color = palette.accent,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    IconButton(onClick = { onRequestDelete(item) }, modifier = Modifier.size(52.dp)) {
+                        Icon(
+                            Icons.Rounded.Delete,
+                            contentDescription = "Excluir \${item.name}",
+                            tint = Color(0xFF94A3B8)
+                        )
+                    }
+                }
+                HorizontalDivider(color = Color(0x14FFFFFF))
+            }
+        }
+    }
+
+    // Modal de Configurações (Tamanho da Interface + Tema de Cores + Inicialização Automática)
+    if (state.isSettingsOpen) {
+        SettingsDialog(
+            currentScale = state.uiScaleLevel,
+            currentTheme = state.colorTheme,
+            startOnBoot = state.startOnBoot,
+            onSelectScale = onSelectUiScale,
+            onSelectTheme = onSelectColorTheme,
+            onToggleStartOnBoot = onToggleStartOnBoot,
+            onDismiss = onDismissSettings
+        )
+    }
+
+    // Diálogo manual de seleção de pastas para o modo "Todas"
+    if (state.isAllFilterDialogOpen) {
+        AllFoldersFilterDialog(
+            folders = state.selectableAllFolders,
+            initialSelectedIds = state.selectedAllFolderIds,
+            onDismiss = onDismissAllFilter,
+            onApply = onApplyAllFilter
+        )
+    }
+
+    // Janela de confirmação de exclusão direta
+    val toDelete = state.pendingDeleteItem
+    if (toDelete != null) {
+        AlertDialog(
+            onDismissRequest = onCancelDelete,
+            title = { Text("Excluir arquivo?") },
+            text = { Text("Deseja apagar permanentemente \\"\${toDelete.name}\\" do armazenamento?") },
+            confirmButton = {
+                Button(
+                    onClick = onConfirmDelete,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFEF4444),
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Excluir")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onCancelDelete) {
+                    Text("Cancelar", color = Color(0xFFCBD5E1))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsDialog(
+    currentScale: UiScaleLevel,
+    currentTheme: AppColorTheme,
+    startOnBoot: Boolean,
+    onSelectScale: (UiScaleLevel) -> Unit,
+    onSelectTheme: (AppColorTheme) -> Unit,
+    onToggleStartOnBoot: (Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalAutoCinePalette.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0E1420),
+        titleContentColor = Color.White,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.Settings,
+                    contentDescription = null,
+                    tint = palette.accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = "Configurações",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // 1. Tamanho da Interface (4 níveis fixos)
+                Text(
+                    text = "Tamanho da Interface",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                val scaleRows = remember { UiScaleLevel.entries.chunked(2) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    scaleRows.forEach { rowLevels ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            rowLevels.forEach { level ->
+                                val selected = level == currentScale
+                                Surface(
+                                    onClick = { onSelectScale(level) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (selected) palette.accentDark else Color(0xFF1A2234),
+                                    border = BorderStroke(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) palette.accent else Color(0x26FFFFFF)
+                                    ),
+                                    modifier = Modifier.weight(1f).height(48.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center,
+                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                    ) {
+                                        if (selected) {
+                                            Icon(
+                                                Icons.Rounded.Check,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                        }
+                                        Text(
+                                            text = level.label,
+                                            color = Color.White,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 2. Tema de Cores (6 conjuntos pré-definidos)
+                Text(
+                    text = "Tema de Cores",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                val themeRows = remember { AppColorTheme.entries.chunked(2) }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    themeRows.forEach { rowThemes ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            rowThemes.forEach { theme ->
+                                val selected = theme == currentTheme
+                                Surface(
+                                    onClick = { onSelectTheme(theme) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (selected) theme.accentSoft else Color(0xFF1A2234),
+                                    border = BorderStroke(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) theme.accent else Color(0x26FFFFFF)
+                                    ),
+                                    modifier = Modifier.weight(1f).height(48.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 10.dp)
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .clip(CircleShape)
+                                                .background(theme.accent)
+                                        ) {
+                                            if (selected) {
+                                                Icon(
+                                                    Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = theme.onAccent,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(
+                                            text = theme.label,
+                                            color = Color.White,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 3. Inicialização Automática ao Ligar a Multimídia (Boot / Pós-Chave ACC)
+                Text(
+                    text = "Inicialização Automática",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Surface(
+                    onClick = { onToggleStartOnBoot(!startOnBoot) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (startOnBoot) palette.accentSoft else Color(0xFF1A2234),
+                    border = BorderStroke(
+                        width = if (startOnBoot) 1.5.dp else 1.dp,
+                        color = if (startOnBoot) palette.accent else Color(0x26FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (startOnBoot) palette.accent else Color(0xFF0F172A))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PowerSettingsNew,
+                                contentDescription = null,
+                                tint = if (startOnBoot) palette.onAccent else Color(0xFF94A3B8),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Iniciar com a Multimídia",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (startOnBoot) {
+                                    "Ativado: abre o app e retoma o último vídeo automaticamente ao ligar o carro."
+                                } else {
+                                    "Desativado: o aplicativo só abrirá quando você tocar no ícone."
+                                },
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Checkbox(
+                            checked = startOnBoot,
+                            onCheckedChange = { onToggleStartOnBoot(it) },
+                            colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.accent,
+                    contentColor = palette.onAccent
+                )
+            ) {
+                Text("Concluir", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+private data class FolderOriginGroup(
+    val label: String,
+    val folders: List<FolderEntry>
+)
+
+@Composable
+private fun AllFoldersFilterDialog(
+    folders: List<FolderEntry>,
+    initialSelectedIds: Set<String>?,
+    onDismiss: () -> Unit,
+    onApply: (Set<String>?) -> Unit
+) {
+    val palette = LocalAutoCinePalette.current
+    var draftSelected by remember(folders, initialSelectedIds) {
+        mutableStateOf(
+            initialSelectedIds ?: folders.map { it.id }.toSet()
+        )
+    }
+
+    // Tudo inicia RECOLHIDO por padrão: apenas os grupos principais (Pen Drive, Cartão SD, Memória Interna)
+    // aparecem fechados inicialmente, e cada nível expande sob demanda ao tocar na seta/grupo.
+    var expandedGroups by remember(folders) { mutableStateOf(emptySet<String>()) }
+    var expandedFolderIds by remember(folders) { mutableStateOf(emptySet<String>()) }
+
+    val groups = remember(folders) {
+        val priorityOrder = listOf("Pen Drive", "Cartão SD", "Memória Interna")
+        val grouped = folders.groupBy { it.sourceLabel.ifBlank { "Memória Interna" } }
+        val orderedKeys = priorityOrder.filter { it in grouped.keys } +
+            grouped.keys.filter { it !in priorityOrder }.sorted()
+        orderedKeys.map { label ->
+            FolderOriginGroup(label = label, folders = grouped[label].orEmpty())
+        }
+    }
+
+    // Mapeia rapidamente quais pastas possuem subpastas filhas dentro do mesmo grupo/prefixo
+    val childrenInfoByGroup = remember(groups) {
+        groups.associate { group ->
+            val byPrefixAndPath = HashMap<Pair<String, List<String>>, FolderEntry>()
+            val hasChildrenSet = HashSet<String>()
+            val parentIdByFolderId = HashMap<String, String>()
+
+            group.folders.forEach { entry ->
+                val prefix = entry.id.substringBefore(':', "")
+                byPrefixAndPath[prefix to entry.relativePath] = entry
+            }
+            group.folders.forEach { entry ->
+                if (entry.relativePath.isNotEmpty()) {
+                    val prefix = entry.id.substringBefore(':', "")
+                    val parentPath = entry.relativePath.dropLast(1)
+                    val parent = byPrefixAndPath[prefix to parentPath]
+                    if (parent != null && parent.id != entry.id) {
+                        hasChildrenSet.add(parent.id)
+                        parentIdByFolderId[entry.id] = parent.id
+                    }
+                }
+            }
+            group.label to (hasChildrenSet to parentIdByFolderId)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = Color(0xFF0E1420),
+        titleContentColor = Color.White,
+        title = {
+            Text(
+                text = "Selecionar Pastas para \\"Todas\\"",
+                fontSize = 19.sp,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    TextButton(onClick = { draftSelected = folders.map { it.id }.toSet() }) {
+                        Text("Marcar todas", color = palette.accent)
+                    }
+                    TextButton(onClick = { draftSelected = emptySet() }) {
+                        Text("Limpar", color = Color(0xFF94A3B8))
+                    }
+                    if (expandedGroups.isNotEmpty() || expandedFolderIds.isNotEmpty()) {
+                        TextButton(
+                            onClick = {
+                                expandedGroups = emptySet()
+                                expandedFolderIds = emptySet()
+                            }
+                        ) {
+                            Text("Recolher", color = Color(0xFF94A3B8))
+                        }
+                    }
+                }
+
+                LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                    groups.forEach { group ->
+                        val isGroupExpanded = group.label in expandedGroups
+                        val groupIds = group.folders.map { it.id }.toSet()
+                        val selectedCount = group.folders.count { it.id in draftSelected }
+                        val allInGroupSelected = groupIds.isNotEmpty() && selectedCount == groupIds.size
+                        val totalVideosInGroup = group.folders.sumOf { it.videoCount.coerceAtLeast(0) }
+                        val groupIcon = when (group.label) {
+                            "Pen Drive" -> Icons.Rounded.Usb
+                            "Cartão SD" -> Icons.Rounded.SdCard
+                            else -> Icons.Rounded.Storage
+                        }
+
+                        item(key = "group_\${group.label}") {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color(0xFF151E2E))
+                                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        expandedGroups = if (isGroupExpanded) {
+                                            expandedGroups - group.label
+                                        } else {
+                                            expandedGroups + group.label
+                                        }
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (isGroupExpanded) {
+                                        Icons.Rounded.KeyboardArrowDown
+                                    } else {
+                                        Icons.Rounded.ChevronRight
+                                    },
+                                    contentDescription = if (isGroupExpanded) "Recolher \${group.label}" else "Expandir \${group.label}",
+                                    tint = palette.accent,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                                Checkbox(
+                                    checked = allInGroupSelected,
+                                    onCheckedChange = { checked ->
+                                        draftSelected = if (checked) {
+                                            draftSelected + groupIds
+                                        } else {
+                                            draftSelected - groupIds
+                                        }
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                                )
+                                Icon(
+                                    imageVector = groupIcon,
+                                    contentDescription = null,
+                                    tint = palette.accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = group.label,
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "$selectedCount/\${group.folders.size} pastas · $totalVideosInGroup vídeos",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        if (isGroupExpanded) {
+                            val (hasChildrenSet, parentIdMap) = childrenInfoByGroup[group.label]
+                                ?: (emptySet<String>() to emptyMap<String, String>())
+
+                            val visibleInGroup = group.folders.filter { entry ->
+                                var parentId = parentIdMap[entry.id]
+                                var ancestorsExpanded = true
+                                while (parentId != null) {
+                                    if (parentId !in expandedFolderIds) {
+                                        ancestorsExpanded = false
+                                        break
+                                    }
+                                    parentId = parentIdMap[parentId]
+                                }
+                                ancestorsExpanded
+                            }
+
+                            items(visibleInGroup, key = { "folder_\${group.label}_\${it.id}" }) { folder ->
+                                val checked = folder.id in draftSelected
+                                val hasSubfolders = folder.id in hasChildrenSet
+                                val isFolderExpanded = folder.id in expandedFolderIds
+                                val indentDp = (16 + folder.depth * 18).coerceAtMost(96)
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            draftSelected = if (checked) {
+                                                draftSelected - folder.id
+                                            } else {
+                                                draftSelected + folder.id
+                                            }
+                                        }
+                                        .padding(start = indentDp.dp, top = 4.dp, bottom = 4.dp, end = 6.dp)
+                                ) {
+                                    if (hasSubfolders) {
+                                        IconButton(
+                                            onClick = {
+                                                expandedFolderIds = if (isFolderExpanded) {
+                                                    expandedFolderIds - folder.id
+                                                } else {
+                                                    expandedFolderIds + folder.id
+                                                }
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isFolderExpanded) {
+                                                    Icons.Rounded.KeyboardArrowDown
+                                                } else {
+                                                    Icons.Rounded.ChevronRight
+                                                },
+                                                contentDescription = if (isFolderExpanded) "Recolher \${folder.name}" else "Expandir \${folder.name}",
+                                                tint = palette.accent,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Spacer(Modifier.width(36.dp))
+                                    }
+
+                                    Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = { isChecked ->
+                                            draftSelected = if (isChecked) {
+                                                draftSelected + folder.id
+                                            } else {
+                                                draftSelected - folder.id
+                                            }
+                                        },
+                                        colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = folder.name,
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        val countText = if (folder.videoCount >= 0) {
+                                            "\${folder.videoCount} vídeos"
+                                        } else {
+                                            "Pasta"
+                                        }
+                                        Text(
+                                            text = if (hasSubfolders) "$countText · com subpastas" else countText,
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val allIds = folders.map { it.id }.toSet()
+                    val normalized = if (draftSelected == allIds) null else draftSelected
+                    onApply(normalized)
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = palette.accentDark,
+                    contentColor = Color.White
+                )
+            ) {
+                Text("Aplicar")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancelar", color = Color(0xFFCBD5E1))
+            }
+        }
+    )
+}
+`,
   },
   {
-    path: "app/src/main/java/com/autocine/player/ui/PlayerScreen.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Tela principal com VlcVideoSurface nativo preservado e gestos de brilho/volume Android",
-    content: "package com.autocine.player.ui\n\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.layout.Box\nimport androidx.compose.foundation.layout.Row\nimport androidx.compose.foundation.layout.fillMaxHeight\nimport androidx.compose.foundation.layout.fillMaxSize\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.DisposableEffect\nimport androidx.compose.runtime.LaunchedEffect\nimport androidx.compose.runtime.collectAsState\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.mutableStateOf\nimport androidx.compose.runtime.remember\nimport androidx.compose.runtime.rememberUpdatedState\nimport androidx.compose.runtime.setValue\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.viewinterop.AndroidView\nimport com.autocine.player.data.StorageSlot\nimport com.autocine.player.viewmodel.PlayerViewModel\nimport com.autocine.player.vlc.VlcPlayerEngine\nimport kotlinx.coroutines.delay\nimport kotlinx.coroutines.flow.distinctUntilChanged\nimport kotlinx.coroutines.flow.map\nimport org.videolan.libvlc.util.VLCVideoLayout\n\n@Composable\nfun PlayerScreen(\n    viewModel: PlayerViewModel,\n    engine: VlcPlayerEngine?,\n    onEnterPip: () -> Unit,\n    onPickFolderForSlot: (StorageSlot) -> Unit,\n    onAdjustBrightness: (Float) -> Unit,\n    onGetBrightness: () -> Float,\n    onAdjustVolume: (Float) -> Float,\n    onGetVolume: () -> Float\n) {\n    // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn\n    // NÃO recomponham a cada tick de progresso do vídeo em hardware modesto.\n    val layoutModeFlow = remember {\n        viewModel.uiState\n            .map { Triple(it.isSplitScreen, it.isInPipMode, it.isPlaying) }\n            .distinctUntilChanged()\n    }\n    val layoutMode by layoutModeFlow.collectAsState(\n        initial = Triple(false, false, false)\n    )\n    val (isSplitScreen, isInPipMode, isPlaying) = layoutMode\n\n    var controlsVisible by remember { mutableStateOf(true) }\n\n    // Oculta automaticamente os controles após 4.5 segundos em tela cheia\n    LaunchedEffect(controlsVisible, isPlaying, isSplitScreen, isInPipMode) {\n        if (controlsVisible && isPlaying && !isSplitScreen && !isInPipMode) {\n            delay(4500L)\n            controlsVisible = false\n        }\n    }\n\n    Box(\n        modifier = Modifier\n            .fillMaxSize()\n            .background(Color.Black)\n    ) {\n        if (isSplitScreen && !isInPipMode) {\n            SplitScreenContent(\n                viewModel = viewModel,\n                engine = engine,\n                onExpandToFullscreen = {\n                    controlsVisible = true\n                    viewModel.setSplitScreen(false)\n                },\n                onEnterPip = onEnterPip,\n                onPickFolderForSlot = onPickFolderForSlot\n            )\n        } else {\n            FullscreenContent(\n                viewModel = viewModel,\n                engine = engine,\n                isInPipMode = isInPipMode,\n                controlsVisible = controlsVisible,\n                onToggleControls = { controlsVisible = !controlsVisible },\n                onEnterPip = onEnterPip,\n                onAdjustBrightness = onAdjustBrightness,\n                onGetBrightness = onGetBrightness,\n                onAdjustVolume = onAdjustVolume,\n                onGetVolume = onGetVolume\n            )\n        }\n    }\n}\n\n@Composable\nprivate fun SplitScreenContent(\n    viewModel: PlayerViewModel,\n    engine: VlcPlayerEngine?,\n    onExpandToFullscreen: () -> Unit,\n    onEnterPip: () -> Unit,\n    onPickFolderForSlot: (StorageSlot) -> Unit\n) {\n    // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)\n    val browserStateFlow = remember {\n        viewModel.uiState\n            .map { state ->\n                state.copy(positionMs = 0L, durationMs = 0L)\n            }\n            .distinctUntilChanged()\n    }\n    val state by browserStateFlow.collectAsState(\n        initial = viewModel.uiState.value.copy(positionMs = 0L, durationMs = 0L)\n    )\n\n    Row(modifier = Modifier.fillMaxSize()) {\n        // Esquerda: Mini-Player com VlcVideoSurface nativo + Controles + Armazenamento\n        SplitScreenLeftPane(\n            isPlaying = state.isPlaying,\n            activeStorageSlot = state.activeStorageSlot,\n            hasCustomAllFilter = state.selectedAllFolderIds != null,\n            videoSurface = {\n                VlcVideoSurface(\n                    engine = engine,\n                    modifier = Modifier.fillMaxSize()\n                )\n            },\n            onExpandVideo = onExpandToFullscreen,\n            onTogglePlayPause = viewModel::togglePlayPause,\n            onPrev = viewModel::playPrevious,\n            onNext = viewModel::playNext,\n            onEnterPip = onEnterPip,\n            onSelectStorageSlot = { slot ->\n                viewModel.selectStorageSlot(slot, onPickFolderForSlot)\n            },\n            onOpenAllFilter = viewModel::openAllFoldersFilter,\n            modifier = Modifier\n                .weight(0.40f)\n                .fillMaxHeight()\n                .padding(14.dp)\n        )\n\n        // Direita: Navegação instantânea por subpastas + Lista com miniaturas sob demanda, busca com Limpar, configurações, refresh e delete\n        SplitScreenFileList(\n            state = state,\n            onSelectVideo = viewModel::playVideoFromList,\n            onOpenSubfolder = viewModel::openSubfolder,\n            onNavigateUp = viewModel::navigateUpFolder,\n            onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,\n            onOpenAllFilter = viewModel::openAllFoldersFilter,\n            onDismissAllFilter = viewModel::closeAllFoldersFilter,\n            onApplyAllFilter = viewModel::applyAllFoldersSelection,\n            onOpenSettings = viewModel::openSettings,\n            onDismissSettings = viewModel::closeSettings,\n            onSelectUiScale = viewModel::setUiScaleLevel,\n            onSelectColorTheme = viewModel::setColorTheme,\n            onSearchChange = viewModel::updateSearchQuery,\n            onRefresh = viewModel::refreshCurrentFolder,\n            onCycleSort = viewModel::cycleSortOrder,\n            onRequestDelete = viewModel::requestDelete,\n            onConfirmDelete = viewModel::confirmDelete,\n            onCancelDelete = viewModel::cancelDelete,\n            modifier = Modifier\n                .weight(0.60f)\n                .fillMaxHeight()\n        )\n    }\n}\n\n@Composable\nprivate fun FullscreenContent(\n    viewModel: PlayerViewModel,\n    engine: VlcPlayerEngine?,\n    isInPipMode: Boolean,\n    controlsVisible: Boolean,\n    onToggleControls: () -> Unit,\n    onEnterPip: () -> Unit,\n    onAdjustBrightness: (Float) -> Unit,\n    onGetBrightness: () -> Float,\n    onAdjustVolume: (Float) -> Float,\n    onGetVolume: () -> Float\n) {\n    val state by viewModel.uiState.collectAsState()\n\n    Box(modifier = Modifier.fillMaxSize()) {\n        // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)\n        VlcVideoSurface(\n            engine = engine,\n            modifier = Modifier.fillMaxSize()\n        )\n\n        if (!isInPipMode) {\n            GestureOverlay(\n                positionMs = state.positionMs,\n                durationMs = state.durationMs,\n                onTapToggleControls = onToggleControls,\n                onSeekCommit = viewModel::seekTo,\n                onGetBrightness = onGetBrightness,\n                onAdjustBrightness = onAdjustBrightness,\n                onGetVolume = onGetVolume,\n                onAdjustVolume = onAdjustVolume\n            )\n\n            FullScreenControls(\n                visible = controlsVisible,\n                state = state,\n                onTogglePlayPause = viewModel::togglePlayPause,\n                onPrev = viewModel::playPrevious,\n                onNext = viewModel::playNext,\n                onSeek = viewModel::seekTo,\n                onCycleMode = viewModel::cyclePlaybackMode,\n                onCycleAspect = viewModel::cycleAspectRatio,\n                onOpenSplitList = { viewModel.setSplitScreen(true) },\n                onEnterPip = onEnterPip\n            )\n        }\n    }\n}\n\n@Composable\nprivate fun VlcVideoSurface(\n    engine: VlcPlayerEngine?,\n    modifier: Modifier = Modifier\n) {\n    val currentEngine by rememberUpdatedState(engine)\n    var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }\n\n    // Garante anexação imediata assim que o engine conectar ou a View ficar pronta\n    LaunchedEffect(engine, videoLayoutRef) {\n        val layout = videoLayoutRef\n        if (engine != null && layout != null) {\n            engine.attachVideoLayout(layout)\n        }\n    }\n\n    // Desanexa com segurança quando esta instância específica da superfície sair de tela\n    DisposableEffect(Unit) {\n        onDispose {\n            val layout = videoLayoutRef\n            if (layout != null) {\n                currentEngine?.detachVideoLayout(layout)\n            }\n        }\n    }\n\n    AndroidView(\n        modifier = modifier,\n        factory = { context ->\n            VLCVideoLayout(context).also { layout ->\n                videoLayoutRef = layout\n                engine?.attachVideoLayout(layout)\n            }\n        },\n        update = { layout ->\n            engine?.attachVideoLayout(layout)\n        }\n    )\n}\n",
+    path: 'app/src/main/java/com/autocine/player/ui/PlayerScreen.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Orquestrador principal entre Modo Tela Cheia, Modo Split-Screen e Modo Picture-in-Picture (PiP)',
+    content: `package com.autocine.player.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.autocine.player.data.StorageSlot
+import com.autocine.player.viewmodel.PlayerViewModel
+import com.autocine.player.vlc.VlcPlayerEngine
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import org.videolan.libvlc.util.VLCVideoLayout
+
+@Composable
+fun PlayerScreen(
+    viewModel: PlayerViewModel,
+    engine: VlcPlayerEngine?,
+    onEnterPip: () -> Unit,
+    onPickFolderForSlot: (StorageSlot) -> Unit,
+    onAdjustBrightness: (Float) -> Unit,
+    onGetBrightness: () -> Float,
+    onAdjustVolume: (Float) -> Float,
+    onGetVolume: () -> Float
+) {
+    // Separa o estado estrutural (sem positionMs) para que o Split-Screen e a LazyColumn
+    // NÃO recomponham a cada tick de progresso do vídeo em hardware modesto.
+    val layoutModeFlow = remember {
+        viewModel.uiState
+            .map { Triple(it.isSplitScreen, it.isInPipMode, it.isPlaying) }
+            .distinctUntilChanged()
+    }
+    val layoutMode by layoutModeFlow.collectAsState(
+        initial = Triple(false, false, false)
+    )
+    val (isSplitScreen, isInPipMode, isPlaying) = layoutMode
+
+    var controlsVisible by remember { mutableStateOf(true) }
+
+    // Oculta automaticamente os controles após 4.5 segundos em tela cheia
+    LaunchedEffect(controlsVisible, isPlaying, isSplitScreen, isInPipMode) {
+        if (controlsVisible && isPlaying && !isSplitScreen && !isInPipMode) {
+            delay(4500L)
+            controlsVisible = false
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+    ) {
+        if (isSplitScreen && !isInPipMode) {
+            SplitScreenContent(
+                viewModel = viewModel,
+                engine = engine,
+                onExpandToFullscreen = {
+                    controlsVisible = true
+                    viewModel.setSplitScreen(false)
+                },
+                onEnterPip = onEnterPip,
+                onPickFolderForSlot = onPickFolderForSlot
+            )
+        } else {
+            FullscreenContent(
+                viewModel = viewModel,
+                engine = engine,
+                isInPipMode = isInPipMode,
+                controlsVisible = controlsVisible,
+                onToggleControls = { controlsVisible = !controlsVisible },
+                onEnterPip = onEnterPip,
+                onAdjustBrightness = onAdjustBrightness,
+                onGetBrightness = onGetBrightness,
+                onAdjustVolume = onAdjustVolume,
+                onGetVolume = onGetVolume
+            )
+        }
+    }
+}
+
+@Composable
+private fun SplitScreenContent(
+    viewModel: PlayerViewModel,
+    engine: VlcPlayerEngine?,
+    onExpandToFullscreen: () -> Unit,
+    onEnterPip: () -> Unit,
+    onPickFolderForSlot: (StorageSlot) -> Unit
+) {
+    // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)
+    val browserStateFlow = remember {
+        viewModel.uiState
+            .map { state ->
+                state.copy(positionMs = 0L, durationMs = 0L)
+            }
+            .distinctUntilChanged()
+    }
+    val state by browserStateFlow.collectAsState(
+        initial = viewModel.uiState.value.copy(positionMs = 0L, durationMs = 0L)
+    )
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        // Esquerda: Mini-Player com VlcVideoSurface nativo + Controles + Armazenamento
+        SplitScreenLeftPane(
+            isPlaying = state.isPlaying,
+            activeStorageSlot = state.activeStorageSlot,
+            hasCustomAllFilter = state.selectedAllFolderIds != null,
+            videoSurface = {
+                VlcVideoSurface(
+                    engine = engine,
+                    modifier = Modifier.fillMaxSize()
+                )
+            },
+            onExpandVideo = onExpandToFullscreen,
+            onTogglePlayPause = viewModel::togglePlayPause,
+            onPrev = viewModel::playPrevious,
+            onNext = viewModel::playNext,
+            onEnterPip = onEnterPip,
+            onSelectStorageSlot = { slot ->
+                viewModel.selectStorageSlot(slot, onPickFolderForSlot)
+            },
+            onOpenAllFilter = viewModel::openAllFoldersFilter,
+            modifier = Modifier
+                .weight(0.40f)
+                .fillMaxHeight()
+                .padding(14.dp)
+        )
+
+        // Direita: Navegação instantânea por subpastas + Lista com miniaturas sob demanda, busca com Limpar, configurações, refresh e delete
+        SplitScreenFileList(
+            state = state,
+            onSelectVideo = viewModel::playVideoFromList,
+            onOpenSubfolder = viewModel::openSubfolder,
+            onNavigateUp = viewModel::navigateUpFolder,
+            onNavigateBreadcrumb = viewModel::navigateToBreadcrumb,
+            onOpenAllFilter = viewModel::openAllFoldersFilter,
+            onDismissAllFilter = viewModel::closeAllFoldersFilter,
+            onApplyAllFilter = viewModel::applyAllFoldersSelection,
+            onOpenSettings = viewModel::openSettings,
+            onDismissSettings = viewModel::closeSettings,
+            onSelectUiScale = viewModel::setUiScaleLevel,
+            onSelectColorTheme = viewModel::setColorTheme,
+            onToggleStartOnBoot = viewModel::setStartOnBoot,
+            onSearchChange = viewModel::updateSearchQuery,
+            onRefresh = viewModel::refreshCurrentFolder,
+            onCycleSort = viewModel::cycleSortOrder,
+            onRequestDelete = viewModel::requestDelete,
+            onConfirmDelete = viewModel::confirmDelete,
+            onCancelDelete = viewModel::cancelDelete,
+            modifier = Modifier
+                .weight(0.60f)
+                .fillMaxHeight()
+        )
+    }
+}
+
+@Composable
+private fun FullscreenContent(
+    viewModel: PlayerViewModel,
+    engine: VlcPlayerEngine?,
+    isInPipMode: Boolean,
+    controlsVisible: Boolean,
+    onToggleControls: () -> Unit,
+    onEnterPip: () -> Unit,
+    onAdjustBrightness: (Float) -> Unit,
+    onGetBrightness: () -> Float,
+    onAdjustVolume: (Float) -> Float,
+    onGetVolume: () -> Float
+) {
+    val state by viewModel.uiState.collectAsState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)
+        VlcVideoSurface(
+            engine = engine,
+            modifier = Modifier.fillMaxSize()
+        )
+
+        if (!isInPipMode) {
+            GestureOverlay(
+                positionMs = state.positionMs,
+                durationMs = state.durationMs,
+                onTapToggleControls = onToggleControls,
+                onSeekCommit = viewModel::seekTo,
+                onGetBrightness = onGetBrightness,
+                onAdjustBrightness = onAdjustBrightness,
+                onGetVolume = onGetVolume,
+                onAdjustVolume = onAdjustVolume
+            )
+
+            FullScreenControls(
+                visible = controlsVisible,
+                state = state,
+                onTogglePlayPause = viewModel::togglePlayPause,
+                onPrev = viewModel::playPrevious,
+                onNext = viewModel::playNext,
+                onSeek = viewModel::seekTo,
+                onCycleMode = viewModel::cyclePlaybackMode,
+                onCycleAspect = viewModel::cycleAspectRatio,
+                onOpenSplitList = { viewModel.setSplitScreen(true) },
+                onEnterPip = onEnterPip
+            )
+        }
+    }
+}
+
+@Composable
+private fun VlcVideoSurface(
+    engine: VlcPlayerEngine?,
+    modifier: Modifier = Modifier
+) {
+    val currentEngine by rememberUpdatedState(engine)
+    var videoLayoutRef by remember { mutableStateOf<VLCVideoLayout?>(null) }
+
+    // Garante anexação imediata assim que o engine conectar ou a View ficar pronta
+    LaunchedEffect(engine, videoLayoutRef) {
+        val layout = videoLayoutRef
+        if (engine != null && layout != null) {
+            engine.attachVideoLayout(layout)
+        }
+    }
+
+    // Desanexa com segurança quando esta instância específica da superfície sair de tela
+    DisposableEffect(Unit) {
+        onDispose {
+            val layout = videoLayoutRef
+            if (layout != null) {
+                currentEngine?.detachVideoLayout(layout)
+            }
+        }
+    }
+
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            VLCVideoLayout(context).also { layout ->
+                videoLayoutRef = layout
+                engine?.attachVideoLayout(layout)
+            }
+        },
+        update = { layout ->
+            engine?.attachVideoLayout(layout)
+        }
+    )
+}
+`,
   },
   {
-    path: "app/src/main/java/com/autocine/player/MainActivity.kt",
-    category: "ui",
-    language: "kotlin",
-    summary: "Activity imersiva Landscape com PiP, SAF persistente, AudioManager STREAM_MUSIC + FLAG_SHOW_UI e salvamento síncrono no onStop",
-    content: "package com.autocine.player\n\nimport android.Manifest\nimport android.app.PendingIntent\nimport android.app.PictureInPictureParams\nimport android.app.RemoteAction\nimport android.content.BroadcastReceiver\nimport android.content.ComponentName\nimport android.content.Context\nimport android.content.Intent\nimport android.content.IntentFilter\nimport android.content.ServiceConnection\nimport android.content.pm.ActivityInfo\nimport android.content.pm.PackageManager\nimport android.content.res.Configuration\nimport android.graphics.drawable.Icon\nimport android.media.AudioManager\nimport android.net.Uri\nimport android.os.Build\nimport android.os.Bundle\nimport android.os.Environment\nimport android.os.IBinder\nimport android.provider.Settings\nimport android.util.Rational\nimport android.view.View\nimport androidx.activity.ComponentActivity\nimport androidx.activity.compose.setContent\nimport androidx.activity.result.contract.ActivityResultContracts\nimport androidx.activity.viewModels\nimport androidx.annotation.RequiresApi\nimport androidx.compose.runtime.collectAsState\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.mutableStateOf\nimport androidx.compose.runtime.remember\nimport androidx.compose.runtime.setValue\nimport androidx.core.content.ContextCompat\nimport androidx.core.view.WindowCompat\nimport androidx.core.view.WindowInsetsCompat\nimport androidx.core.view.WindowInsetsControllerCompat\nimport androidx.documentfile.provider.DocumentFile\nimport com.autocine.player.data.StorageSlot\nimport com.autocine.player.service.VideoPlaybackService\nimport com.autocine.player.ui.PlayerScreen\nimport com.autocine.player.ui.theme.AppColorTheme\nimport com.autocine.player.ui.theme.AutoCineTheme\nimport com.autocine.player.ui.theme.UiScaleLevel\nimport com.autocine.player.viewmodel.PlayerViewModel\nimport com.autocine.player.vlc.VlcPlayerEngine\nimport kotlinx.coroutines.flow.distinctUntilChanged\nimport kotlinx.coroutines.flow.map\nimport kotlin.math.roundToInt\n\nclass MainActivity : ComponentActivity() {\n\n    companion object {\n        private const val PIP_ACTION_CONTROL = \"com.autocine.player.PIP_CONTROL\"\n        private const val EXTRA_CONTROL_TYPE = \"control_type\"\n        private const val CONTROL_PREV = 1\n        private const val CONTROL_TOGGLE = 2\n        private const val CONTROL_NEXT = 3\n    }\n\n    private val viewModel: PlayerViewModel by viewModels()\n    private var playbackService: VideoPlaybackService? = null\n    private var activeEngine by mutableStateOf<VlcPlayerEngine?>(null)\n    private var isBound = false\n    private var pendingPickerSlot: StorageSlot = StorageSlot.USB\n\n    private val serviceConnection = object : ServiceConnection {\n        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {\n            val svc = (binder as VideoPlaybackService.LocalBinder).getService()\n            playbackService = svc\n            activeEngine = svc.engine\n            isBound = true\n            viewModel.bindService(svc)\n            updatePipParams(viewModel.uiState.value.isPlaying)\n        }\n\n        override fun onServiceDisconnected(name: ComponentName?) {\n            isBound = false\n            playbackService = null\n            activeEngine = null\n        }\n    }\n\n    private val pipReceiver = object : BroadcastReceiver() {\n        override fun onReceive(context: Context?, intent: Intent?) {\n            if (intent?.action != PIP_ACTION_CONTROL) return\n            when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {\n                CONTROL_PREV -> viewModel.playPrevious()\n                CONTROL_TOGGLE -> {\n                    viewModel.togglePlayPause()\n                    updatePipParams(!viewModel.uiState.value.isPlaying)\n                }\n                CONTROL_NEXT -> viewModel.playNext()\n            }\n        }\n    }\n\n    // Seletor SAF para Pen Drive (USB OTG), Cartão SD e Memória Interna com permissão persistente\n    private val openFolderLauncher = registerForActivityResult(\n        ActivityResultContracts.OpenDocumentTree()\n    ) { uri: Uri? ->\n        if (uri != null) {\n            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION\n            runCatching { contentResolver.takePersistableUriPermission(uri, flags) }\n            val fallbackName = when (pendingPickerSlot) {\n                StorageSlot.USB -> \"Pen Drive\"\n                StorageSlot.SD_CARD -> \"Cartão SD\"\n                StorageSlot.INTERNAL -> \"Memória Interna\"\n                StorageSlot.ALL -> \"Pasta\"\n            }\n            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: fallbackName\n            viewModel.onFolderSelected(uri.toString(), name, pendingPickerSlot)\n        }\n    }\n\n    private val permissionLauncher = registerForActivityResult(\n        ActivityResultContracts.RequestMultiplePermissions()\n    ) { /* Permissões de armazenamento/notificações (Android 7 ao 15+) tratadas */ }\n\n    override fun onCreate(savedInstanceState: Bundle?) {\n        super.onCreate(savedInstanceState)\n        volumeControlStream = AudioManager.STREAM_MUSIC\n        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE\n        enableImmersiveFullscreen()\n        requestModernPermissions()\n\n        VideoPlaybackService.start(this)\n        bindService(\n            Intent(this, VideoPlaybackService::class.java),\n            serviceConnection,\n            Context.BIND_AUTO_CREATE\n        )\n\n        ContextCompat.registerReceiver(\n            this,\n            pipReceiver,\n            IntentFilter(PIP_ACTION_CONTROL),\n            ContextCompat.RECEIVER_NOT_EXPORTED\n        )\n\n        setContent {\n            val appearanceFlow = remember {\n                viewModel.uiState\n                    .map { it.colorTheme to it.uiScaleLevel }\n                    .distinctUntilChanged()\n            }\n            val appearance by appearanceFlow.collectAsState(\n                initial = AppColorTheme.AUTOMOTIVE_BLUE to UiScaleLevel.DEFAULT\n            )\n            val (colorTheme, uiScaleLevel) = appearance\n            AutoCineTheme(\n                colorTheme = colorTheme,\n                uiScaleLevel = uiScaleLevel\n            ) {\n                PlayerScreen(\n                    viewModel = viewModel,\n                    engine = activeEngine,\n                    onEnterPip = { enterPipNow() },\n                    onPickFolderForSlot = { slot ->\n                        pendingPickerSlot = slot\n                        openFolderLauncher.launch(null)\n                    },\n                    onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },\n                    onGetBrightness = { getWindowBrightness() },\n                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },\n                    onGetVolume = { getMediaVolume() }\n                )\n            }\n        }\n    }\n\n    /**\n     * IMPORTANTE: Nunca pausamos nem reiniciamos a reprodução em onPause()/onStop()/onResume().\n     * Apenas salvamos a posição exata ao sair e reaplicamos o modo imersivo/proporção ao voltar.\n     */\n    override fun onResume() {\n        super.onResume()\n        if (!isInPictureInPictureMode) {\n            enableImmersiveFullscreen()\n        }\n        activeEngine?.reapplyAspectRatio()\n    }\n\n    override fun onPause() {\n        viewModel.persistPlaybackPosition(commitImmediately = false)\n        super.onPause()\n    }\n\n    override fun onStop() {\n        viewModel.persistPlaybackPosition(commitImmediately = true)\n        super.onStop()\n    }\n\n    override fun onUserLeaveHint() {\n        super.onUserLeaveHint()\n        viewModel.persistPlaybackPosition(commitImmediately = false)\n        if (viewModel.uiState.value.isPlaying) {\n            enterPipNow()\n        }\n    }\n\n    override fun onPictureInPictureModeChanged(\n        isInPictureInPictureMode: Boolean,\n        newConfig: Configuration\n    ) {\n        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)\n        viewModel.setInPipMode(isInPictureInPictureMode)\n        if (!isInPictureInPictureMode) {\n            enableImmersiveFullscreen()\n        }\n        activeEngine?.reapplyAspectRatio()\n    }\n\n    override fun onWindowFocusChanged(hasFocus: Boolean) {\n        super.onWindowFocusChanged(hasFocus)\n        if (hasFocus && !isInPictureInPictureMode) {\n            enableImmersiveFullscreen()\n        }\n    }\n\n    private fun enableImmersiveFullscreen() {\n        WindowCompat.setDecorFitsSystemWindows(window, false)\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {\n            val controller = WindowInsetsControllerCompat(window, window.decorView)\n            controller.hide(WindowInsetsCompat.Type.systemBars())\n            controller.systemBarsBehavior =\n                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE\n        } else {\n            @Suppress(\"DEPRECATION\")\n            window.decorView.systemUiVisibility = (\n                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY\n                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE\n                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION\n                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN\n                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION\n                    or View.SYSTEM_UI_FLAG_FULLSCREEN\n            )\n        }\n    }\n\n    private fun isPipSupported(): Boolean =\n        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&\n            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)\n\n    private fun enterPipNow() {\n        if (!isPipSupported()) return\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n            runCatching {\n                val params = buildPipParams(viewModel.uiState.value.isPlaying)\n                setPictureInPictureParams(params)\n                enterPictureInPictureMode(params)\n            }\n        }\n    }\n\n    private fun updatePipParams(isPlaying: Boolean) {\n        if (!isPipSupported()) return\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n            runCatching {\n                setPictureInPictureParams(buildPipParams(isPlaying))\n            }\n        }\n    }\n\n    @RequiresApi(Build.VERSION_CODES.O)\n    private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams {\n        val actions = listOf(\n            createRemoteAction(\n                iconRes = android.R.drawable.ic_media_previous,\n                title = getString(R.string.pip_action_prev),\n                controlType = CONTROL_PREV\n            ),\n            createRemoteAction(\n                iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,\n                title = if (isPlaying) getString(R.string.pip_action_pause) else getString(R.string.pip_action_play),\n                controlType = CONTROL_TOGGLE\n            ),\n            createRemoteAction(\n                iconRes = android.R.drawable.ic_media_next,\n                title = getString(R.string.pip_action_next),\n                controlType = CONTROL_NEXT\n            )\n        )\n        val builder = PictureInPictureParams.Builder()\n            .setAspectRatio(Rational(16, 9))\n            .setActions(actions)\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {\n            builder.setAutoEnterEnabled(isPlaying)\n            builder.setSeamlessResizeEnabled(true)\n        }\n        return builder.build()\n    }\n\n    @RequiresApi(Build.VERSION_CODES.O)\n    private fun createRemoteAction(iconRes: Int, title: String, controlType: Int): RemoteAction {\n        val intent = Intent(PIP_ACTION_CONTROL).apply {\n            setPackage(packageName)\n            putExtra(EXTRA_CONTROL_TYPE, controlType)\n        }\n        val pendingIntent = PendingIntent.getBroadcast(\n            this,\n            controlType,\n            intent,\n            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT\n        )\n        return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)\n    }\n\n    private fun setWindowBrightness(fraction: Float) {\n        val clamped = fraction.coerceIn(0.05f, 1.0f)\n        val params = window.attributes\n        params.screenBrightness = clamped\n        window.attributes = params\n    }\n\n    private fun getWindowBrightness(): Float {\n        val current = window.attributes.screenBrightness\n        if (current in 0.05f..1.0f) return current\n        val sysBrightness = runCatching {\n            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f\n        }.getOrDefault(0.75f)\n        return sysBrightness.coerceIn(0.05f, 1.0f)\n    }\n\n    /**\n     * Ajusta o volume de mídia do sistema Android (AudioManager.STREAM_MUSIC) via setStreamVolume\n     * com FLAG_SHOW_UI e retorna a porcentagem real atual (getStreamVolume / getStreamMaxVolume).\n     */\n    private fun setMediaVolume(fraction: Float): Float {\n        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager\n            ?: return fraction.coerceIn(0f, 1f)\n        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)\n        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)\n        val target = (fraction.coerceIn(0f, 1f) * maxVol).roundToInt().coerceIn(0, maxVol)\n        if (target != current) {\n            runCatching {\n                audioManager.setStreamVolume(\n                    AudioManager.STREAM_MUSIC,\n                    target,\n                    AudioManager.FLAG_SHOW_UI\n                )\n            }\n        }\n        val actual = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)\n        return (actual.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)\n    }\n\n    private fun getMediaVolume(): Float {\n        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return 0.5f\n        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)\n        val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).coerceIn(0, maxVol)\n        return (current.toFloat() / maxVol.toFloat()).coerceIn(0f, 1f)\n    }\n\n    private fun requestModernPermissions() {\n        val permissionsToRequest = mutableListOf<String>()\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {\n            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)\n            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)\n        } else {\n            permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)\n            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {\n                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)\n            }\n        }\n        if (permissionsToRequest.isNotEmpty()) {\n            permissionLauncher.launch(permissionsToRequest.toTypedArray())\n        }\n\n        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {\n            runCatching {\n                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {\n                    data = Uri.parse(\"package:$packageName\")\n                }\n                startActivity(intent)\n            }\n        }\n    }\n\n    override fun onDestroy() {\n        viewModel.persistPlaybackPosition(commitImmediately = true)\n        runCatching { unregisterReceiver(pipReceiver) }\n        if (isBound) {\n            unbindService(serviceConnection)\n            isBound = false\n        }\n        super.onDestroy()\n    }\n}\n",
-  }
+    path: 'app/src/main/java/com/autocine/player/MainActivity.kt',
+    category: 'ui',
+    language: 'kotlin',
+    summary: 'Activity paisagem com modo imersivo, PiP, volume híbrido (libVLC + STREAM_MUSIC sem travamento) e BootReceiver',
+    content: `package com.autocine.player
+
+import android.Manifest
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.ServiceConnection
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.content.res.Configuration
+import android.graphics.drawable.Icon
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Environment
+import android.os.IBinder
+import android.provider.Settings
+import android.util.Rational
+import android.view.View
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.documentfile.provider.DocumentFile
+import com.autocine.player.data.StorageSlot
+import com.autocine.player.receiver.BootReceiver
+import com.autocine.player.service.VideoPlaybackService
+import com.autocine.player.ui.PlayerScreen
+import com.autocine.player.ui.theme.AppColorTheme
+import com.autocine.player.ui.theme.AutoCineTheme
+import com.autocine.player.ui.theme.UiScaleLevel
+import com.autocine.player.viewmodel.PlayerViewModel
+import com.autocine.player.vlc.VlcPlayerEngine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
+
+class MainActivity : ComponentActivity() {
+
+    companion object {
+        private const val PIP_ACTION_CONTROL = "com.autocine.player.PIP_CONTROL"
+        private const val EXTRA_CONTROL_TYPE = "control_type"
+        private const val CONTROL_PREV = 1
+        private const val CONTROL_TOGGLE = 2
+        private const val CONTROL_NEXT = 3
+    }
+
+    private val viewModel: PlayerViewModel by viewModels()
+    private var playbackService: VideoPlaybackService? = null
+    private var activeEngine by mutableStateOf<VlcPlayerEngine?>(null)
+    private var isBound = false
+    private var pendingPickerSlot: StorageSlot = StorageSlot.USB
+    private var lastAppliedSystemVolStep: Int = -1
+
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val svc = (binder as VideoPlaybackService.LocalBinder).getService()
+            playbackService = svc
+            activeEngine = svc.engine
+            isBound = true
+            viewModel.bindService(svc)
+            updatePipParams(viewModel.uiState.value.isPlaying)
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            isBound = false
+            playbackService = null
+            activeEngine = null
+        }
+    }
+
+    private val pipReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != PIP_ACTION_CONTROL) return
+            when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
+                CONTROL_PREV -> viewModel.playPrevious()
+                CONTROL_TOGGLE -> {
+                    viewModel.togglePlayPause()
+                    updatePipParams(!viewModel.uiState.value.isPlaying)
+                }
+                CONTROL_NEXT -> viewModel.playNext()
+            }
+        }
+    }
+
+    // Seletor SAF para Pen Drive (USB OTG), Cartão SD e Memória Interna com permissão persistente
+    private val openFolderLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
+            val fallbackName = when (pendingPickerSlot) {
+                StorageSlot.USB -> "Pen Drive"
+                StorageSlot.SD_CARD -> "Cartão SD"
+                StorageSlot.INTERNAL -> "Memória Interna"
+                StorageSlot.ALL -> "Pasta"
+            }
+            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: fallbackName
+            viewModel.onFolderSelected(uri.toString(), name, pendingPickerSlot)
+        }
+    }
+
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* Permissões de armazenamento/notificações (Android 7 ao 15+) tratadas */ }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        volumeControlStream = AudioManager.STREAM_MUSIC
+        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        enableImmersiveFullscreen()
+        requestModernPermissions()
+
+        VideoPlaybackService.start(this)
+        bindService(
+            Intent(this, VideoPlaybackService::class.java),
+            serviceConnection,
+            Context.BIND_AUTO_CREATE
+        )
+
+        ContextCompat.registerReceiver(
+            this,
+            pipReceiver,
+            IntentFilter(PIP_ACTION_CONTROL),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        setContent {
+            val appearanceFlow = remember {
+                viewModel.uiState
+                    .map { Triple(it.colorTheme, it.uiScaleLevel, it.startOnBoot) }
+                    .distinctUntilChanged()
+            }
+            val appearance by appearanceFlow.collectAsState(
+                initial = Triple(AppColorTheme.AUTOMOTIVE_BLUE, UiScaleLevel.DEFAULT, true)
+            )
+            val (colorTheme, uiScaleLevel, startOnBoot) = appearance
+
+            // Sincroniza o estado do BootReceiver no PackageManager sempre que a opção mudar
+            syncBootReceiverComponent(startOnBoot)
+
+            AutoCineTheme(
+                colorTheme = colorTheme,
+                uiScaleLevel = uiScaleLevel
+            ) {
+                PlayerScreen(
+                    viewModel = viewModel,
+                    engine = activeEngine,
+                    onEnterPip = { enterPipNow() },
+                    onPickFolderForSlot = { slot ->
+                        pendingPickerSlot = slot
+                        openFolderLauncher.launch(null)
+                    },
+                    onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
+                    onGetBrightness = { getWindowBrightness() },
+                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
+                    onGetVolume = { getMediaVolume() }
+                )
+            }
+        }
+    }
+
+    /**
+     * IMPORTANTE: Nunca pausamos nem reiniciamos a reprodução em onPause()/onStop()/onResume().
+     * Apenas salvamos a posição exata ao sair e reaplicamos o modo imersivo/proporção ao voltar.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (!isInPictureInPictureMode) {
+            enableImmersiveFullscreen()
+        }
+        activeEngine?.reapplyAspectRatio()
+    }
+
+    override fun onPause() {
+        viewModel.persistPlaybackPosition(commitImmediately = false)
+        super.onPause()
+    }
+
+    override fun onStop() {
+        viewModel.persistPlaybackPosition(commitImmediately = true)
+        super.onStop()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        viewModel.persistPlaybackPosition(commitImmediately = false)
+        if (viewModel.uiState.value.isPlaying) {
+            enterPipNow()
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        viewModel.setInPipMode(isInPictureInPictureMode)
+        if (!isInPictureInPictureMode) {
+            enableImmersiveFullscreen()
+        }
+        activeEngine?.reapplyAspectRatio()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && !isInPictureInPictureMode) {
+            enableImmersiveFullscreen()
+        }
+    }
+
+    private fun enableImmersiveFullscreen() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = WindowInsetsControllerCompat(window, window.decorView)
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+        }
+    }
+
+    private fun isPipSupported(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    private fun enterPipNow() {
+        if (!isPipSupported()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                val params = buildPipParams(viewModel.uiState.value.isPlaying)
+                setPictureInPictureParams(params)
+                enterPictureInPictureMode(params)
+            }
+        }
+    }
+
+    private fun updatePipParams(isPlaying: Boolean) {
+        if (!isPipSupported()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching {
+                setPictureInPictureParams(buildPipParams(isPlaying))
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun buildPipParams(isPlaying: Boolean): PictureInPictureParams {
+        val actions = listOf(
+            createRemoteAction(
+                iconRes = android.R.drawable.ic_media_previous,
+                title = getString(R.string.pip_action_prev),
+                controlType = CONTROL_PREV
+            ),
+            createRemoteAction(
+                iconRes = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+                title = if (isPlaying) getString(R.string.pip_action_pause) else getString(R.string.pip_action_play),
+                controlType = CONTROL_TOGGLE
+            ),
+            createRemoteAction(
+                iconRes = android.R.drawable.ic_media_next,
+                title = getString(R.string.pip_action_next),
+                controlType = CONTROL_NEXT
+            )
+        )
+        val builder = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .setActions(actions)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(isPlaying)
+            builder.setSeamlessResizeEnabled(true)
+        }
+        return builder.build()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun createRemoteAction(iconRes: Int, title: String, controlType: Int): RemoteAction {
+        val intent = Intent(PIP_ACTION_CONTROL).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_CONTROL_TYPE, controlType)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            controlType,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        return RemoteAction(Icon.createWithResource(this, iconRes), title, title, pendingIntent)
+    }
+
+    private fun setWindowBrightness(fraction: Float) {
+        val clamped = fraction.coerceIn(0.05f, 1.0f)
+        val params = window.attributes
+        params.screenBrightness = clamped
+        window.attributes = params
+    }
+
+    private fun getWindowBrightness(): Float {
+        val current = window.attributes.screenBrightness
+        if (current in 0.05f..1.0f) return current
+        val sysBrightness = runCatching {
+            Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.75f)
+        return sysBrightness.coerceIn(0.05f, 1.0f)
+    }
+
+    /**
+     * Ajusta o volume sem nenhum travamento (60fps):
+     * 1) Atualiza instantaneamente o volume de saída do motor libVLC (0% a 100%) e salva no estado,
+     *    garantindo que o som mude na multimídia mesmo quando o amplificador MCU ignora o Android.
+     * 2) Atualiza o AudioManager.STREAM_MUSIC do Android apenas quando cruza um novo degrau inteiro
+     *    e SEM AudioManager.FLAG_SHOW_UI (evitando que a janela de volume do sistema roube foco e trave o gesto).
+     */
+    private fun setMediaVolume(fraction: Float): Float {
+        val clamped = fraction.coerceIn(0f, 1f)
+        viewModel.syncVolumeFraction(clamped)
+
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return clamped
+        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val target = (clamped * maxVol).roundToInt().coerceIn(0, maxVol)
+        if (target != lastAppliedSystemVolStep) {
+            lastAppliedSystemVolStep = target
+            runCatching {
+                audioManager.setStreamVolume(
+                    AudioManager.STREAM_MUSIC,
+                    target,
+                    0
+                )
+            }
+        }
+        return clamped
+    }
+
+    private fun getMediaVolume(): Float {
+        lastAppliedSystemVolStep = -1
+        return viewModel.getVolumeFraction()
+    }
+
+    private fun syncBootReceiverComponent(enabled: Boolean) {
+        runCatching {
+            val component = ComponentName(this, BootReceiver::class.java)
+            val newState = if (enabled) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+            if (packageManager.getComponentEnabledSetting(component) != newState) {
+                packageManager.setComponentEnabledSetting(
+                    component,
+                    newState,
+                    PackageManager.DONT_KILL_APP
+                )
+            }
+        }
+    }
+
+    private fun requestModernPermissions() {
+        val permissionsToRequest = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
+            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
+                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+        }
+        if (permissionsToRequest.isNotEmpty()) {
+            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            runCatching {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        viewModel.persistPlaybackPosition(commitImmediately = true)
+        runCatching { unregisterReceiver(pipReceiver) }
+        if (isBound) {
+            unbindService(serviceConnection)
+            isBound = false
+        }
+        super.onDestroy()
+    }
+}
+`,
+  },
 ];

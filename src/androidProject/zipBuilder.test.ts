@@ -59,8 +59,16 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(manifest, /READ_MEDIA_VIDEO/);
   assert.match(manifest, /android:icon="@mipmap\/ic_launcher"/);
   assert.match(manifest, /android:roundIcon="@mipmap\/ic_launcher_round"/);
+  assert.match(manifest, /RECEIVE_BOOT_COMPLETED/);
+  assert.match(manifest, /\.receiver\.BootReceiver/);
 
-  // Requirement: Unified awaitEachGesture overlay with independent left brightness, right STREAM_MUSIC volume, and horizontal seek
+  // Requirement: BootReceiver launches MainActivity when startOnBoot is enabled
+  const bootReceiverKt = byPath.get('app/src/main/java/com/autocine/player/receiver/BootReceiver.kt');
+  assert.ok(bootReceiverKt, 'BootReceiver.kt must exist');
+  assert.match(bootReceiverKt, /isStartOnBootEnabledSync/);
+  assert.match(bootReceiverKt, /FLAG_ACTIVITY_NEW_TASK/);
+
+  // Requirement: Unified awaitEachGesture overlay with independent left brightness, right volume, and horizontal seek
   const gestureKt = byPath.get('app/src/main/java/com/autocine/player/ui/GestureOverlay.kt');
   assert.ok(gestureKt, 'GestureOverlay.kt must exist');
   assert.match(gestureKt, /awaitEachGesture/);
@@ -79,12 +87,12 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(themeKt, /enum class AppColorTheme/);
   assert.match(themeKt, /LocalDensity provides/);
 
-  // Requirement: Clean scrollable left pane, SettingsDialog (without internal volume option), collapsed AllFoldersFilterDialog, LruCache thumbnails
+  // Requirement: Clean scrollable left pane, SettingsDialog with Iniciar com a Multimídia, collapsed AllFoldersFilterDialog, LruCache thumbnails
   const splitKt = byPath.get('app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt');
   assert.ok(splitKt, 'SplitScreenBrowser.kt must exist');
   assert.match(splitKt, /verticalScroll/);
   assert.match(splitKt, /fun SettingsDialog/);
-  assert.doesNotMatch(splitKt, /Gesto de Volume na Tela/);
+  assert.match(splitKt, /Iniciar com a Multimídia/);
   assert.match(splitKt, /expandedGroups by remember\(folders\) \{ mutableStateOf\(emptySet<String>\(\)\) \}/);
   assert.match(splitKt, /expandedFolderIds by remember\(folders\) \{ mutableStateOf\(emptySet<String>\(\)\) \}/);
   assert.match(splitKt, /LruCache/);
@@ -92,7 +100,7 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(splitKt, /ensureActive/);
   assert.match(splitKt, /text = "Limpar"/);
 
-  // Requirement (Safety Lock): libVLC ScaleTypes, stop before new Media, HW decoder fallback, Vout updateVideoSurfaces, FIXED_VLC_VOLUME = 100
+  // Requirement (Safety Lock): libVLC ScaleTypes, stop before new Media, HW decoder fallback, Vout updateVideoSurfaces, setVolumePercent
   const vlcKt = byPath.get('app/src/main/java/com/autocine/player/vlc/VlcPlayerEngine.kt');
   assert.ok(vlcKt, 'VlcPlayerEngine.kt must exist');
   assert.match(vlcKt, /player\.stop\(\)/);
@@ -105,29 +113,30 @@ test('Android Kotlin project bundle includes all required architectural files an
   assert.match(vlcKt, /SURFACE_FILL/);
   assert.match(vlcKt, /SURFACE_16_9/);
   assert.match(vlcKt, /SURFACE_4_3/);
-  assert.match(vlcKt, /FIXED_VLC_VOLUME = 100/);
+  assert.match(vlcKt, /fun setVolumePercent/);
   assert.match(vlcKt, /hasActiveMediaFor/);
 
-  // Requirement (Safety Lock): Proven VlcVideoSurface hosting in PlayerScreen + AudioManager callbacks wired
+  // Requirement (Safety Lock): Proven VlcVideoSurface hosting in PlayerScreen + volume callbacks wired
   const playerScreenKt = byPath.get('app/src/main/java/com/autocine/player/ui/PlayerScreen.kt');
   assert.ok(playerScreenKt, 'PlayerScreen.kt must exist');
   assert.match(playerScreenKt, /fun VlcVideoSurface/);
   assert.match(playerScreenKt, /onAdjustVolume = onAdjustVolume/);
 
-  // Requirement: AudioManager STREAM_MUSIC setStreamVolume + FLAG_SHOW_UI + volumeControlStream in MainActivity
+  // Requirement: Smooth 60fps hybrid volume (libVLC syncVolumeFraction + throttled silent STREAM_MUSIC setStreamVolume without FLAG_SHOW_UI) + syncBootReceiverComponent
   const mainActivityKt = byPath.get('app/src/main/java/com/autocine/player/MainActivity.kt');
   assert.ok(mainActivityKt, 'MainActivity.kt must exist');
   assert.match(mainActivityKt, /volumeControlStream = AudioManager\.STREAM_MUSIC/);
-  assert.match(mainActivityKt, /setStreamVolume\(/);
-  assert.match(mainActivityKt, /AudioManager\.FLAG_SHOW_UI/);
-  assert.match(mainActivityKt, /getStreamMaxVolume/);
+  assert.match(mainActivityKt, /viewModel\.syncVolumeFraction\(clamped\)/);
+  assert.match(mainActivityKt, /setStreamVolume\(\s*AudioManager\.STREAM_MUSIC,\s*target,\s*0\s*\)/);
+  assert.match(mainActivityKt, /syncBootReceiverComponent/);
 
-  // Requirement: Synchronous LastPlaybackSnapshot persisted for auto-resume on app reopen
+  // Requirement: Synchronous LastPlaybackSnapshot & StartOnBoot persisted for auto-resume on app reopen and boot
   const prefsKt = byPath.get('app/src/main/java/com/autocine/player/data/PreferencesManager.kt');
   assert.ok(prefsKt, 'PreferencesManager.kt must exist');
   assert.match(prefsKt, /data class LastPlaybackSnapshot/);
   assert.match(prefsKt, /fun readLastPlaybackSync/);
   assert.match(prefsKt, /fun saveLastPlaybackSync/);
+  assert.match(prefsKt, /fun isStartOnBootEnabledSync/);
 
   // Requirement: URI accessibility check + in-memory directory cache + fast physical/DocumentsContract listing
   const storageRepoKt = byPath.get('app/src/main/java/com/autocine/player/data/StorageRepository.kt');

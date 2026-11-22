@@ -1,8 +1,10 @@
 package com.autocine.player.data
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -64,7 +66,9 @@ data class SavedPlayerPrefs(
     val aspectRatio: AspectRatioOption = AspectRatioOption.FIT,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
     val uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
-    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE
+    val colorTheme: AppColorTheme = AppColorTheme.AUTOMOTIVE_BLUE,
+    val startOnBoot: Boolean = true,
+    val volumePercent: Int = 100
 )
 
 class PreferencesManager(private val context: Context) {
@@ -83,9 +87,17 @@ class PreferencesManager(private val context: Context) {
         private const val SYNC_IS_ALL_MODE = "sync_is_all_mode"
         private const val SYNC_POSITION_MS = "sync_position_ms"
         private const val SYNC_DURATION_MS = "sync_duration_ms"
+        private const val SYNC_START_ON_BOOT = "sync_start_on_boot"
+        private const val SYNC_VOLUME_PERCENT = "sync_volume_percent"
     }
 
-    private val resumePrefs = context.applicationContext.getSharedPreferences(
+    private val syncStorageContext: Context = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+        context.applicationContext.createDeviceProtectedStorageContext() ?: context.applicationContext
+    } else {
+        context.applicationContext
+    }
+
+    private val resumePrefs = syncStorageContext.getSharedPreferences(
         RESUME_PREFS_NAME,
         Context.MODE_PRIVATE
     )
@@ -108,6 +120,8 @@ class PreferencesManager(private val context: Context) {
         val SORT_ORDER = stringPreferencesKey("sort_order")
         val UI_SCALE_LEVEL = stringPreferencesKey("ui_scale_level")
         val COLOR_THEME = stringPreferencesKey("color_theme")
+        val START_ON_BOOT = booleanPreferencesKey("start_on_boot")
+        val VOLUME_PERCENT = intPreferencesKey("volume_percent")
     }
 
     val prefsFlow: Flow<SavedPlayerPrefs> = context.dataStore.data.map { prefs ->
@@ -140,7 +154,9 @@ class PreferencesManager(private val context: Context) {
                 ?: UiScaleLevel.DEFAULT,
             colorTheme = prefs[Keys.COLOR_THEME]
                 ?.let { runCatching { AppColorTheme.valueOf(it) }.getOrNull() }
-                ?: AppColorTheme.AUTOMOTIVE_BLUE
+                ?: AppColorTheme.AUTOMOTIVE_BLUE,
+            startOnBoot = prefs[Keys.START_ON_BOOT] ?: resumePrefs.getBoolean(SYNC_START_ON_BOOT, true),
+            volumePercent = (prefs[Keys.VOLUME_PERCENT] ?: resumePrefs.getInt(SYNC_VOLUME_PERCENT, 100)).coerceIn(0, 100)
         )
     }
 
@@ -261,5 +277,26 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun saveColorTheme(theme: AppColorTheme) {
         context.dataStore.edit { it[Keys.COLOR_THEME] = theme.name }
+    }
+
+    fun isStartOnBootEnabledSync(): Boolean =
+        resumePrefs.getBoolean(SYNC_START_ON_BOOT, true)
+
+    suspend fun saveStartOnBoot(enabled: Boolean) {
+        resumePrefs.edit().putBoolean(SYNC_START_ON_BOOT, enabled).commit()
+        context.dataStore.edit { it[Keys.START_ON_BOOT] = enabled }
+    }
+
+    fun readVolumePercentSync(): Int =
+        resumePrefs.getInt(SYNC_VOLUME_PERCENT, 100).coerceIn(0, 100)
+
+    fun saveVolumePercentSync(percent: Int) {
+        resumePrefs.edit().putInt(SYNC_VOLUME_PERCENT, percent.coerceIn(0, 100)).apply()
+    }
+
+    suspend fun saveVolumePercent(percent: Int) {
+        val clamped = percent.coerceIn(0, 100)
+        resumePrefs.edit().putInt(SYNC_VOLUME_PERCENT, clamped).apply()
+        context.dataStore.edit { it[Keys.VOLUME_PERCENT] = clamped }
     }
 }

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PictureInPictureAlt
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.SdCard
 import androidx.compose.material.icons.rounded.Search
@@ -490,6 +491,7 @@ fun SplitScreenFileList(
     onDismissSettings: () -> Unit,
     onSelectUiScale: (UiScaleLevel) -> Unit,
     onSelectColorTheme: (AppColorTheme) -> Unit,
+    onToggleStartOnBoot: (Boolean) -> Unit,
     onSearchChange: (String) -> Unit,
     onRefresh: () -> Unit,
     onCycleSort: () -> Unit,
@@ -821,13 +823,15 @@ fun SplitScreenFileList(
         }
     }
 
-    // Modal de Configurações (Tamanho da Interface + Tema de Cores)
+    // Modal de Configurações (Tamanho da Interface + Tema de Cores + Inicialização Automática)
     if (state.isSettingsOpen) {
         SettingsDialog(
             currentScale = state.uiScaleLevel,
             currentTheme = state.colorTheme,
+            startOnBoot = state.startOnBoot,
             onSelectScale = onSelectUiScale,
             onSelectTheme = onSelectColorTheme,
+            onToggleStartOnBoot = onToggleStartOnBoot,
             onDismiss = onDismissSettings
         )
     }
@@ -873,8 +877,10 @@ fun SplitScreenFileList(
 private fun SettingsDialog(
     currentScale: UiScaleLevel,
     currentTheme: AppColorTheme,
+    startOnBoot: Boolean,
     onSelectScale: (UiScaleLevel) -> Unit,
     onSelectTheme: (AppColorTheme) -> Unit,
+    onToggleStartOnBoot: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
@@ -1025,6 +1031,71 @@ private fun SettingsDialog(
                                 }
                             }
                         }
+                    }
+                }
+
+                HorizontalDivider(color = Color(0x18FFFFFF))
+
+                // 3. Inicialização Automática ao Ligar a Multimídia (Boot / Pós-Chave ACC)
+                Text(
+                    text = "Inicialização Automática",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Surface(
+                    onClick = { onToggleStartOnBoot(!startOnBoot) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (startOnBoot) palette.accentSoft else Color(0xFF1A2234),
+                    border = BorderStroke(
+                        width = if (startOnBoot) 1.5.dp else 1.dp,
+                        color = if (startOnBoot) palette.accent else Color(0x26FFFFFF)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (startOnBoot) palette.accent else Color(0xFF0F172A))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PowerSettingsNew,
+                                contentDescription = null,
+                                tint = if (startOnBoot) palette.onAccent else Color(0xFF94A3B8),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Iniciar com a Multimídia",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (startOnBoot) {
+                                    "Ativado: abre o app e retoma o último vídeo automaticamente ao ligar o carro."
+                                } else {
+                                    "Desativado: o aplicativo só abrirá quando você tocar no ícone."
+                                },
+                                color = Color(0xFF94A3B8),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Checkbox(
+                            checked = startOnBoot,
+                            onCheckedChange = { onToggleStartOnBoot(it) },
+                            colors = CheckboxDefaults.colors(checkedColor = palette.accent)
+                        )
                     }
                 }
             }

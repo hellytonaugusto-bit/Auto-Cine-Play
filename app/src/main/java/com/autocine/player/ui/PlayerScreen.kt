@@ -154,6 +154,7 @@ private fun SplitScreenContent(
             onDismissSettings = viewModel::closeSettings,
             onSelectUiScale = viewModel::setUiScaleLevel,
             onSelectColorTheme = viewModel::setColorTheme,
+            onToggleStartOnBoot = viewModel::setStartOnBoot,
             onSearchChange = viewModel::updateSearchQuery,
             onRefresh = viewModel::refreshCurrentFolder,
             onCycleSort = viewModel::cycleSortOrder,
