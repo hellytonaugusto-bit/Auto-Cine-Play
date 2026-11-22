@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.compose.runtime.Immutable
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import java.io.File
 import java.text.Normalizer
 import java.util.concurrent.ConcurrentHashMap
 
+@Immutable
 enum class SortOrder(val label: String) {
     NAME_ASC("Nome (A–Z)"),
     NAME_DESC("Nome (Z–A)"),
@@ -21,6 +23,7 @@ enum class SortOrder(val label: String) {
     fun next(): SortOrder = entries[(ordinal + 1) % entries.size]
 }
 
+@Immutable
 data class VideoFileItem(
     val id: String,
     val uri: Uri,
@@ -29,9 +32,11 @@ data class VideoFileItem(
     val lastModified: Long,
     val isSafDocument: Boolean,
     val folderName: String = "",
-    val folderId: String = ""
+    val folderId: String = "",
+    val normalizedName: String = StorageRepository.normalizeForSearch(name)
 )
 
+@Immutable
 data class FolderEntry(
     val id: String,
     val name: String,
@@ -39,9 +44,11 @@ data class FolderEntry(
     val sourceLabel: String,
     val depth: Int = 0,
     val videoCount: Int = -1,
-    val documentId: String = ""
+    val documentId: String = "",
+    val normalizedName: String = StorageRepository.normalizeForSearch(name)
 )
 
+@Immutable
 data class DirectorySnapshot(
     val subfolders: List<FolderEntry>,
     val videos: List<VideoFileItem>
@@ -77,13 +84,13 @@ class StorageRepository(private val context: Context) {
         fun filterBySubstring(items: List<VideoFileItem>, query: String): List<VideoFileItem> {
             val normalizedQuery = normalizeForSearch(query)
             if (normalizedQuery.isEmpty()) return items
-            return items.filter { normalizeForSearch(it.name).contains(normalizedQuery) }
+            return items.filter { it.normalizedName.contains(normalizedQuery) }
         }
 
         fun sortItems(items: List<VideoFileItem>, sortOrder: SortOrder): List<VideoFileItem> =
             when (sortOrder) {
-                SortOrder.NAME_ASC -> items.sortedBy { normalizeForSearch(it.name) }
-                SortOrder.NAME_DESC -> items.sortedByDescending { normalizeForSearch(it.name) }
+                SortOrder.NAME_ASC -> items.sortedBy { it.normalizedName }
+                SortOrder.NAME_DESC -> items.sortedByDescending { it.normalizedName }
                 SortOrder.DATE_DESC -> items.sortedByDescending { it.lastModified }
             }
     }
@@ -132,6 +139,17 @@ class StorageRepository(private val context: Context) {
         directoryCache.clear()
         allFoldersCache.clear()
         safDocumentIdCache.clear()
+    }
+
+    /**
+     * Resolve o nome de exibição de uma pasta SAF fora da Main Thread (evita IPC no onActivityResult).
+     */
+    suspend fun resolveTreeDisplayName(treeUri: Uri, fallbackName: String): String = withContext(Dispatchers.IO) {
+        runCatching {
+            DocumentFile.fromTreeUri(context, treeUri)?.name
+                ?: treeUri.lastPathSegment
+                ?: fallbackName
+        }.getOrDefault(fallbackName)
     }
 
     /**
@@ -309,7 +327,7 @@ class StorageRepository(private val context: Context) {
         }
 
         return DirectorySnapshot(
-            subfolders = subfolders.sortedBy { normalizeForSearch(it.name) },
+            subfolders = subfolders.sortedBy { it.normalizedName },
             videos = videos
         )
     }
@@ -462,6 +480,7 @@ class StorageRepository(private val context: Context) {
         }
 
         val uniqueById = LinkedHashMap<String, VideoFileItem>()
+        val seenNameAndSize = HashSet<Pair<String, Long>>()
 
         fun scanRoot(uriStr: String, filePrefix: String, safPrefix: String) {
             if (uriStr.isEmpty()) return
@@ -478,7 +497,10 @@ class StorageRepository(private val context: Context) {
             }
             fromRoot
                 .filter { selectedFolderIds == null || it.folderId in selectedFolderIds }
-                .forEach { uniqueById[it.id] = it }
+                .forEach {
+                    uniqueById[it.id] = it
+                    seenNameAndSize.add(it.name to it.sizeBytes)
+                }
         }
 
         scanRoot(savedFolderUri, "file:", "saf:")
@@ -492,10 +514,7 @@ class StorageRepository(private val context: Context) {
         queryMediaStoreVideos()
             .filter { selectedFolderIds == null || it.folderId in selectedFolderIds }
             .forEach { item ->
-                val duplicateByNameAndSize = uniqueById.values.any {
-                    it.name == item.name && it.sizeBytes == item.sizeBytes
-                }
-                if (!duplicateByNameAndSize) {
+                if (seenNameAndSize.add(item.name to item.sizeBytes)) {
                     uniqueById[item.id] = item
                 }
             }
@@ -620,7 +639,7 @@ class StorageRepository(private val context: Context) {
         }
 
         return DirectorySnapshot(
-            subfolders = subfolders.sortedBy { normalizeForSearch(it.name) },
+            subfolders = subfolders.sortedBy { it.normalizedName },
             videos = videos
         )
     }

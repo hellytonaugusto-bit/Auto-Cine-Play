@@ -36,7 +36,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -47,12 +53,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autocine.player.data.PlaybackMode
 import com.autocine.player.ui.theme.LocalAutoCinePalette
+import com.autocine.player.viewmodel.PlaybackProgressState
 import com.autocine.player.viewmodel.PlayerUiState
+import kotlinx.coroutines.flow.StateFlow
+
+private val TopScrimBrush = Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent))
+private val BottomScrimBrush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D)))
+private val ControlChipShape = RoundedCornerShape(16.dp)
+private val ControlChipColor = Color(0x991E293B)
+private val CenterButtonBgColor = Color(0xB30F172A)
+
+private fun formatTwoDigitIndex(value: Int): String = if (value < 10) "0$value" else value.toString()
 
 @Composable
 fun FullScreenControls(
     visible: Boolean,
     state: PlayerUiState,
+    progressFlow: StateFlow<PlaybackProgressState>,
     onTogglePlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -63,8 +80,19 @@ fun FullScreenControls(
     onEnterPip: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
-    val topScrim = remember { Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent)) }
-    val bottomScrim = remember { Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D))) }
+
+    val headerLabel by remember(state.currentVideo?.name, state.currentIndexInFolder, state.allVideos.size) {
+        derivedStateOf {
+            val video = state.currentVideo
+            if (video != null) {
+                val total = state.allVideos.size
+                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0
+                "${formatTwoDigitIndex(idxDisplay)}/${formatTwoDigitIndex(total)} - ${video.name}"
+            } else {
+                "Toque em Pastas para escolher vídeos (USB / SD)"
+            }
+        }
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -80,17 +108,9 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(topScrim)
+                    .background(TopScrimBrush)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
-                val total = state.allVideos.size
-                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0
-                val headerLabel = if (state.currentVideo != null) {
-                    "%02d/%02d - %s".format(idxDisplay, total, state.currentVideo.name)
-                } else {
-                    "Toque em Pastas para escolher vídeos (USB / SD)"
-                }
-
                 Text(
                     text = headerLabel,
                     color = Color.White,
@@ -105,8 +125,8 @@ fun FullScreenControls(
 
                 Surface(
                     onClick = onEnterPip,
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0x991E293B),
+                    shape = ControlChipShape,
+                    color = ControlChipColor,
                     modifier = Modifier.height(58.dp)
                 ) {
                     Row(
@@ -134,7 +154,7 @@ fun FullScreenControls(
                 Surface(
                     onClick = onPrev,
                     shape = CircleShape,
-                    color = Color(0xB30F172A),
+                    color = CenterButtonBgColor,
                     modifier = Modifier.size(88.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -166,7 +186,7 @@ fun FullScreenControls(
                 Surface(
                     onClick = onNext,
                     shape = CircleShape,
-                    color = Color(0xB30F172A),
+                    color = CenterButtonBgColor,
                     modifier = Modifier.size(88.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -185,30 +205,15 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(bottomScrim)
+                    .background(BottomScrimBrush)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(formatMs(state.positionMs), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    val maxDuration = state.durationMs.coerceAtLeast(1L).toFloat()
-                    Slider(
-                        value = state.positionMs.toFloat().coerceIn(0f, maxDuration),
-                        onValueChange = { onSeek(it.toLong()) },
-                        valueRange = 0f..maxDuration,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = palette.accent,
-                            inactiveTrackColor = Color(0x4DFFFFFF)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 14.dp)
-                    )
-                    Text(formatMs(state.durationMs), color = Color(0xFFCBD5E1), fontSize = 16.sp)
-                }
+                // Barra de progresso 100% isolada: somente este Composable recompõe ao longo do tempo
+                FullScreenProgressBar(
+                    progressFlow = progressFlow,
+                    accentColor = palette.accent,
+                    onSeek = onSeek
+                )
 
                 Spacer(Modifier.height(10.dp))
 
@@ -221,8 +226,8 @@ fun FullScreenControls(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Surface(
                             onClick = onCycleMode,
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0x991E293B),
+                            shape = ControlChipShape,
+                            color = ControlChipColor,
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
@@ -242,8 +247,8 @@ fun FullScreenControls(
 
                         Surface(
                             onClick = onCycleAspect,
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0x991E293B),
+                            shape = ControlChipShape,
+                            color = ControlChipColor,
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
@@ -278,7 +283,7 @@ fun FullScreenControls(
                     // Direita: Botão grande Pastas / Lista (64dp)
                     Surface(
                         onClick = onOpenSplitList,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = ControlChipShape,
                         color = Color(0xFF1E293B),
                         modifier = Modifier.height(64.dp)
                     ) {
@@ -294,5 +299,63 @@ fun FullScreenControls(
                 }
             }
         }
+    }
+}
+
+/**
+ * Composable dedicado e isolado para a linha do tempo e o Slider.
+ * Coleta apenas o StateFlow de progresso, evitando recomposições em cascata
+ * do FullScreenControls, PlayerScreen e VlcVideoSurface a cada tick do vídeo.
+ */
+@Composable
+private fun FullScreenProgressBar(
+    progressFlow: StateFlow<PlaybackProgressState>,
+    accentColor: Color,
+    onSeek: (Long) -> Unit
+) {
+    val progress by progressFlow.collectAsState()
+    var isDragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+
+    val maxDuration = progress.durationMs.coerceAtLeast(1L).toFloat()
+    val displayedPositionMs = if (isDragging) dragValue.toLong() else progress.positionMs
+    val sliderValue = (if (isDragging) dragValue else progress.positionMs.toFloat()).coerceIn(0f, maxDuration)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = formatMs(displayedPositionMs),
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Slider(
+            value = sliderValue,
+            onValueChange = { next ->
+                isDragging = true
+                dragValue = next
+            },
+            onValueChangeFinished = {
+                val targetMs = dragValue.toLong()
+                isDragging = false
+                onSeek(targetMs)
+            },
+            valueRange = 0f..maxDuration,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = accentColor,
+                inactiveTrackColor = Color(0x4DFFFFFF)
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 14.dp)
+        )
+        Text(
+            text = formatMs(progress.durationMs),
+            color = Color(0xFFCBD5E1),
+            fontSize = 16.sp
+        )
     }
 }

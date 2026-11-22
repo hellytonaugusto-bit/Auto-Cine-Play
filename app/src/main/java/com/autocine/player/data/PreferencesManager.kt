@@ -1,7 +1,9 @@
 package com.autocine.player.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
+import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -12,11 +14,14 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 private val Context.dataStore by preferencesDataStore(name = "autocine_prefs")
 
+@Immutable
 enum class PlaybackMode(val label: String) {
     SEQUENTIAL("Sequencial"),
     SHUFFLE("Aleatório"),
@@ -25,6 +30,7 @@ enum class PlaybackMode(val label: String) {
     fun next(): PlaybackMode = entries[(ordinal + 1) % entries.size]
 }
 
+@Immutable
 enum class StorageSlot(val label: String) {
     ALL("Todas"),
     USB("Pen Drive"),
@@ -36,6 +42,7 @@ enum class StorageSlot(val label: String) {
  * Snapshot persistido de forma síncrona (SharedPreferences) para retomar automaticamente
  * o último vídeo, pasta/subpasta de origem e posição exata mesmo se o app for fechado abruptamente.
  */
+@Immutable
 data class LastPlaybackSnapshot(
     val videoId: String = "",
     val videoUri: String = "",
@@ -49,6 +56,7 @@ data class LastPlaybackSnapshot(
     val durationMs: Long = 0L
 )
 
+@Immutable
 data class SavedPlayerPrefs(
     val folderUri: String = "",
     val folderDisplayName: String = "Selecione uma pasta (USB / SD / Interna)",
@@ -91,16 +99,21 @@ class PreferencesManager(private val context: Context) {
         private const val SYNC_VOLUME_PERCENT = "sync_volume_percent"
     }
 
-    private val syncStorageContext: Context = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        context.applicationContext.createDeviceProtectedStorageContext() ?: context.applicationContext
-    } else {
-        context.applicationContext
+    private val syncStorageContext: Context by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            context.applicationContext.createDeviceProtectedStorageContext() ?: context.applicationContext
+        } else {
+            context.applicationContext
+        }
     }
 
-    private val resumePrefs = syncStorageContext.getSharedPreferences(
-        RESUME_PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    // Lazy para evitar leitura síncrona de XML em disco durante o onCreate() na Main Thread
+    private val resumePrefs: SharedPreferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        syncStorageContext.getSharedPreferences(
+            RESUME_PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+    }
 
     private object Keys {
         val FOLDER_URI = stringPreferencesKey("saved_folder_uri")
@@ -283,7 +296,9 @@ class PreferencesManager(private val context: Context) {
         resumePrefs.getBoolean(SYNC_START_ON_BOOT, true)
 
     suspend fun saveStartOnBoot(enabled: Boolean) {
-        resumePrefs.edit().putBoolean(SYNC_START_ON_BOOT, enabled).commit()
+        withContext(Dispatchers.IO) {
+            resumePrefs.edit().putBoolean(SYNC_START_ON_BOOT, enabled).commit()
+        }
         context.dataStore.edit { it[Keys.START_ON_BOOT] = enabled }
     }
 

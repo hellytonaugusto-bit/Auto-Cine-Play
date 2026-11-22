@@ -5,7 +5,7 @@ export const KOTLIN_CORE_FILES: AndroidProjectFile[] = [
     path: 'app/src/main/java/com/autocine/player/vlc/VlcPlayerEngine.kt',
     category: 'core',
     language: 'kotlin',
-    summary: 'Motor libVLC com decodificação híbrida (Hardware + fallback Software), controle de volume, proporção e fila contínua',
+    summary: 'Motor libVLC assíncrono otimizado para hardware 32-bit com HW+SW fallback, volume, proporção e fila contínua',
     content: `package com.autocine.player.vlc
 
 import android.content.Context
@@ -13,11 +13,14 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.util.VLCVideoLayout
 
+@Immutable
 enum class AspectRatioOption(val label: String) {
     FIT("Ajustar"),
     FILL("Preencher"),
@@ -31,22 +34,37 @@ enum class AspectRatioOption(val label: String) {
     }
 }
 
-class VlcPlayerEngine(private val context: Context) {
+@Stable
+class VlcPlayerEngine(context: Context) {
 
     companion object {
-        // Volume interno da libVLC sempre travado em 100% para não conflitar com o volume geral da multimídia
         private const val FIXED_VLC_VOLUME = 100
+        private const val TIME_EMIT_BUCKET_MS = 500L
     }
 
+    private data class PendingPlayRequest(
+        val uri: Uri,
+        val startPositionMs: Long,
+        val forceRestart: Boolean
+    )
+
+    private val appContext: Context = context.applicationContext
     private val mainHandler = Handler(Looper.getMainLooper())
     private var libVlc: LibVLC? = null
     private var mediaPlayer: MediaPlayer? = null
     private var currentPfd: ParcelFileDescriptor? = null
     private var attachedLayout: VLCVideoLayout? = null
+    private var pendingLayout: VLCVideoLayout? = null
+    private var pendingPlayRequest: PendingPlayRequest? = null
+
+    @Volatile
+    private var isReleased: Boolean = false
 
     private var baseVolumePercent: Int = FIXED_VLC_VOLUME
     private var duckMultiplier: Float = 1f
     private var currentAspectRatio: AspectRatioOption = AspectRatioOption.FIT
+    private var lastNotifiedTimeBucket: Long = -1L
+    private var lastNotifiedDurationMs: Long = -1L
 
     @Volatile
     var currentMediaUri: Uri? = null
@@ -64,73 +82,126 @@ class VlcPlayerEngine(private val context: Context) {
     var onTrackEnded: (() -> Unit)? = null
 
     init {
-        initVlc()
+        initVlcAsync()
     }
 
-    private fun initVlc() {
-        // Opções otimizadas para centrais multimídia com hardware modesto:
-        // aceleração por hardware com fallback automático para software, baixo uso de RAM e cache USB rápido.
-        val options = arrayListOf(
-            "--file-caching=600",
-            "--network-caching=1000",
-            "--drop-late-frames",
-            "--skip-frames",
-            "--avcodec-fast",
-            "--avcodec-hw=any",
-            "--audio-time-stretch",
-            "--no-stats",
-            "--no-osd"
-        )
-        libVlc = LibVLC(context.applicationContext, options)
-        mediaPlayer = MediaPlayer(libVlc).apply {
-            volume = FIXED_VLC_VOLUME
-            setEventListener { event ->
-                when (event.type) {
-                    MediaPlayer.Event.Playing -> {
-                        val resumeMs = pendingSeekPositionMs
-                        if (resumeMs > 1000L) {
-                            pendingSeekPositionMs = 0L
-                            val maxLen = length.takeIf { it > 0L } ?: Long.MAX_VALUE
-                            time = resumeMs.coerceIn(0L, maxLen)
-                        }
-                        applyEffectiveVolume()
-                        mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
-                        onPlayingChanged?.invoke(true)
-                    }
-                    MediaPlayer.Event.Vout -> {
-                        if (event.voutCount > 0) {
-                            mainHandler.post {
-                                mediaPlayer?.updateVideoSurfaces()
-                                applyAspectRatioInternal(currentAspectRatio)
+    /**
+     * Inicializa LibVLC e MediaPlayer em thread de background para evitar travar
+     * o primeiro frame (cold start) em centrais multimídia 32-bit com CPU básica.
+     */
+    private fun initVlcAsync() {
+        Thread({
+            if (isReleased) return@Thread
+            // Opções enxutas para hardware modesto (32-bit / pouca RAM):
+            // cache de arquivo reduzido, aceleração por hardware com fallback SW rápido,
+            // sem DSP de time-stretch (sempre 1x), sem legendas complexas/SPU nem filtros pesados.
+            val options = arrayListOf(
+                "--file-caching=350",
+                "--network-caching=600",
+                "--drop-late-frames",
+                "--skip-frames",
+                "--avcodec-fast",
+                "--avcodec-skiploopfilter=2",
+                "--avcodec-threads=2",
+                "--avcodec-hw=any",
+                "--no-audio-time-stretch",
+                "--no-sub-autodetect-file",
+                "--no-spu",
+                "--no-video-title-show",
+                "--deinterlace=0",
+                "--no-stats",
+                "--no-osd"
+            )
+            val createdVlc = runCatching { LibVLC(appContext, options) }.getOrNull() ?: return@Thread
+            if (isReleased) {
+                runCatching { createdVlc.release() }
+                return@Thread
+            }
+            val createdPlayer = runCatching { MediaPlayer(createdVlc) }.getOrNull()
+            if (createdPlayer == null || isReleased) {
+                runCatching { createdPlayer?.release() }
+                runCatching { createdVlc.release() }
+                return@Thread
+            }
+
+            mainHandler.post {
+                if (isReleased) {
+                    runCatching { createdPlayer.release() }
+                    runCatching { createdVlc.release() }
+                    return@post
+                }
+                libVlc = createdVlc
+                mediaPlayer = createdPlayer.apply {
+                    volume = baseVolumePercent
+                    setEventListener { event ->
+                        when (event.type) {
+                            MediaPlayer.Event.Playing -> {
+                                val resumeMs = pendingSeekPositionMs
+                                if (resumeMs > 1000L) {
+                                    pendingSeekPositionMs = 0L
+                                    val maxLen = length.takeIf { it > 0L } ?: Long.MAX_VALUE
+                                    time = resumeMs.coerceIn(0L, maxLen)
+                                }
+                                applyEffectiveVolume()
+                                mainHandler.post { applyAspectRatioInternal(currentAspectRatio) }
+                                onPlayingChanged?.invoke(true)
+                            }
+                            MediaPlayer.Event.Vout -> {
+                                if (event.voutCount > 0) {
+                                    mainHandler.post {
+                                        mediaPlayer?.updateVideoSurfaces()
+                                        applyAspectRatioInternal(currentAspectRatio)
+                                    }
+                                }
+                            }
+                            MediaPlayer.Event.Paused,
+                            MediaPlayer.Event.Stopped -> {
+                                val currentPos = time.coerceAtLeast(0L)
+                                if (currentPos > 0L) lastKnownPositionMs = currentPos
+                                onPlayingChanged?.invoke(false)
+                            }
+                            MediaPlayer.Event.TimeChanged -> {
+                                val pos = time.coerceAtLeast(0L)
+                                val dur = length.coerceAtLeast(0L)
+                                if (pos > 0L) lastKnownPositionMs = pos
+                                val bucket = pos / TIME_EMIT_BUCKET_MS
+                                if (bucket != lastNotifiedTimeBucket || dur != lastNotifiedDurationMs) {
+                                    lastNotifiedTimeBucket = bucket
+                                    lastNotifiedDurationMs = dur
+                                    onTimeChanged?.invoke(pos, dur)
+                                }
+                            }
+                            MediaPlayer.Event.EndReached -> {
+                                lastKnownPositionMs = 0L
+                                pendingSeekPositionMs = 0L
+                                lastNotifiedTimeBucket = -1L
+                                onTrackEnded?.invoke()
                             }
                         }
                     }
-                    MediaPlayer.Event.Paused,
-                    MediaPlayer.Event.Stopped -> {
-                        val currentPos = time.coerceAtLeast(0L)
-                        if (currentPos > 0L) lastKnownPositionMs = currentPos
-                        onPlayingChanged?.invoke(false)
-                    }
-                    MediaPlayer.Event.TimeChanged -> {
-                        val pos = time.coerceAtLeast(0L)
-                        val dur = length.coerceAtLeast(0L)
-                        if (pos > 0L) lastKnownPositionMs = pos
-                        onTimeChanged?.invoke(pos, dur)
-                    }
-                    MediaPlayer.Event.EndReached -> {
-                        lastKnownPositionMs = 0L
-                        pendingSeekPositionMs = 0L
-                        onTrackEnded?.invoke()
-                    }
+                }
+
+                applyEffectiveVolume()
+
+                // Aplica imediatamente qualquer superfície ou reprodução solicitada durante o carregamento assíncrono
+                pendingLayout?.let { layout ->
+                    attachVideoLayout(layout)
+                }
+                pendingPlayRequest?.let { req ->
+                    pendingPlayRequest = null
+                    playUri(req.uri, startPositionMs = req.startPositionMs, forceRestart = req.forceRestart)
                 }
             }
-        }
+        }, "AutoCine-VlcInit").apply {
+            isDaemon = true
+        }.start()
     }
 
     /**
      * Anexa a superfície de vídeo (Tela Cheia, Mini-Player ou PiP) sem interromper nem reiniciar o vídeo.
      */
     fun attachVideoLayout(layout: VLCVideoLayout) {
+        pendingLayout = layout
         val player = mediaPlayer ?: return
         if (attachedLayout === layout) return
         if (attachedLayout != null) {
@@ -145,6 +216,9 @@ class VlcPlayerEngine(private val context: Context) {
      * Desanexa apenas a View visual ao trocar de tela ou ir para segundo plano, mantendo áudio e posição intactos.
      */
     fun detachVideoLayout(layout: VLCVideoLayout) {
+        if (pendingLayout === layout) {
+            pendingLayout = null
+        }
         val player = mediaPlayer ?: return
         if (attachedLayout === layout) {
             val pos = player.time.coerceAtLeast(0L)
@@ -155,20 +229,30 @@ class VlcPlayerEngine(private val context: Context) {
     }
 
     fun hasActiveMedia(): Boolean {
-        return currentMediaUri != null && mediaPlayer?.hasMedia() == true
+        return currentMediaUri != null && (mediaPlayer?.hasMedia() == true || pendingPlayRequest != null)
     }
 
     fun hasActiveMediaFor(uri: Uri): Boolean {
-        return currentMediaUri == uri && mediaPlayer?.hasMedia() == true
+        return currentMediaUri == uri && (mediaPlayer?.hasMedia() == true || pendingPlayRequest?.uri == uri)
     }
 
     /**
      * Carrega e reproduz uma URI. Se a mesma mídia já estiver ativa e forceRestart == false,
-     * nunca recarrega nem reinicia do 00:00 — apenas garante volume em 100%, proporção e continuidade.
+     * nunca recarrega nem reinicia do 00:00 — apenas garante volume, proporção e continuidade.
      */
     fun playUri(uri: Uri, startPositionMs: Long = 0L, forceRestart: Boolean = false) {
-        val vlc = libVlc ?: return
-        val player = mediaPlayer ?: return
+        val vlc = libVlc
+        val player = mediaPlayer
+        if (vlc == null || player == null) {
+            // LibVLC ainda está carregando em background: enfileira para tocar imediatamente ao ficar pronta
+            currentMediaUri = uri
+            pendingSeekPositionMs = startPositionMs.coerceAtLeast(0L)
+            lastKnownPositionMs = startPositionMs.coerceAtLeast(0L)
+            pendingPlayRequest = PendingPlayRequest(uri, startPositionMs, forceRestart)
+            return
+        }
+
+        pendingPlayRequest = null
 
         if (!forceRestart && hasActiveMediaFor(uri)) {
             applyEffectiveVolume()
@@ -182,7 +266,7 @@ class VlcPlayerEngine(private val context: Context) {
         closeActiveDescriptor()
 
         val media = if (uri.scheme == "content") {
-            val pfd = context.contentResolver.openFileDescriptor(uri, "r")
+            val pfd = appContext.contentResolver.openFileDescriptor(uri, "r")
             currentPfd = pfd
             if (pfd != null) {
                 Media(vlc, pfd.fileDescriptor)
@@ -203,6 +287,7 @@ class VlcPlayerEngine(private val context: Context) {
         currentMediaUri = uri
         pendingSeekPositionMs = startPositionMs.coerceAtLeast(0L)
         lastKnownPositionMs = startPositionMs.coerceAtLeast(0L)
+        lastNotifiedTimeBucket = -1L
 
         player.media = media
         media.release()
@@ -241,6 +326,7 @@ class VlcPlayerEngine(private val context: Context) {
         val maxLen = player.length.takeIf { it > 0L } ?: Long.MAX_VALUE
         val clamped = positionMs.coerceIn(0L, maxLen)
         lastKnownPositionMs = clamped
+        lastNotifiedTimeBucket = -1L
         player.time = clamped
     }
 
@@ -317,6 +403,9 @@ class VlcPlayerEngine(private val context: Context) {
     }
 
     fun release() {
+        isReleased = true
+        pendingLayout = null
+        pendingPlayRequest = null
         mediaPlayer?.stop()
         mediaPlayer?.detachViews()
         mediaPlayer?.release()
@@ -443,7 +532,7 @@ class AudioFocusController(
     path: 'app/src/main/java/com/autocine/player/data/StorageRepository.kt',
     category: 'core',
     language: 'kotlin',
-    summary: 'Leitura rápida via File nativo / DocumentsContract com cache em memória, busca sem acentos, ordenação e exclusão',
+    summary: 'Leitura rápida via File nativo / DocumentsContract com modelos @Immutable, cache em memória, busca pré-normalizada e exclusão',
     content: `package com.autocine.player.data
 
 import android.content.ContentUris
@@ -452,6 +541,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import androidx.compose.runtime.Immutable
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -459,6 +549,7 @@ import java.io.File
 import java.text.Normalizer
 import java.util.concurrent.ConcurrentHashMap
 
+@Immutable
 enum class SortOrder(val label: String) {
     NAME_ASC("Nome (A–Z)"),
     NAME_DESC("Nome (Z–A)"),
@@ -467,6 +558,7 @@ enum class SortOrder(val label: String) {
     fun next(): SortOrder = entries[(ordinal + 1) % entries.size]
 }
 
+@Immutable
 data class VideoFileItem(
     val id: String,
     val uri: Uri,
@@ -475,9 +567,11 @@ data class VideoFileItem(
     val lastModified: Long,
     val isSafDocument: Boolean,
     val folderName: String = "",
-    val folderId: String = ""
+    val folderId: String = "",
+    val normalizedName: String = StorageRepository.normalizeForSearch(name)
 )
 
+@Immutable
 data class FolderEntry(
     val id: String,
     val name: String,
@@ -485,9 +579,11 @@ data class FolderEntry(
     val sourceLabel: String,
     val depth: Int = 0,
     val videoCount: Int = -1,
-    val documentId: String = ""
+    val documentId: String = "",
+    val normalizedName: String = StorageRepository.normalizeForSearch(name)
 )
 
+@Immutable
 data class DirectorySnapshot(
     val subfolders: List<FolderEntry>,
     val videos: List<VideoFileItem>
@@ -523,13 +619,13 @@ class StorageRepository(private val context: Context) {
         fun filterBySubstring(items: List<VideoFileItem>, query: String): List<VideoFileItem> {
             val normalizedQuery = normalizeForSearch(query)
             if (normalizedQuery.isEmpty()) return items
-            return items.filter { normalizeForSearch(it.name).contains(normalizedQuery) }
+            return items.filter { it.normalizedName.contains(normalizedQuery) }
         }
 
         fun sortItems(items: List<VideoFileItem>, sortOrder: SortOrder): List<VideoFileItem> =
             when (sortOrder) {
-                SortOrder.NAME_ASC -> items.sortedBy { normalizeForSearch(it.name) }
-                SortOrder.NAME_DESC -> items.sortedByDescending { normalizeForSearch(it.name) }
+                SortOrder.NAME_ASC -> items.sortedBy { it.normalizedName }
+                SortOrder.NAME_DESC -> items.sortedByDescending { it.normalizedName }
                 SortOrder.DATE_DESC -> items.sortedByDescending { it.lastModified }
             }
     }
@@ -578,6 +674,17 @@ class StorageRepository(private val context: Context) {
         directoryCache.clear()
         allFoldersCache.clear()
         safDocumentIdCache.clear()
+    }
+
+    /**
+     * Resolve o nome de exibição de uma pasta SAF fora da Main Thread (evita IPC no onActivityResult).
+     */
+    suspend fun resolveTreeDisplayName(treeUri: Uri, fallbackName: String): String = withContext(Dispatchers.IO) {
+        runCatching {
+            DocumentFile.fromTreeUri(context, treeUri)?.name
+                ?: treeUri.lastPathSegment
+                ?: fallbackName
+        }.getOrDefault(fallbackName)
     }
 
     /**
@@ -755,7 +862,7 @@ class StorageRepository(private val context: Context) {
         }
 
         return DirectorySnapshot(
-            subfolders = subfolders.sortedBy { normalizeForSearch(it.name) },
+            subfolders = subfolders.sortedBy { it.normalizedName },
             videos = videos
         )
     }
@@ -908,6 +1015,7 @@ class StorageRepository(private val context: Context) {
         }
 
         val uniqueById = LinkedHashMap<String, VideoFileItem>()
+        val seenNameAndSize = HashSet<Pair<String, Long>>()
 
         fun scanRoot(uriStr: String, filePrefix: String, safPrefix: String) {
             if (uriStr.isEmpty()) return
@@ -924,7 +1032,10 @@ class StorageRepository(private val context: Context) {
             }
             fromRoot
                 .filter { selectedFolderIds == null || it.folderId in selectedFolderIds }
-                .forEach { uniqueById[it.id] = it }
+                .forEach {
+                    uniqueById[it.id] = it
+                    seenNameAndSize.add(it.name to it.sizeBytes)
+                }
         }
 
         scanRoot(savedFolderUri, "file:", "saf:")
@@ -938,10 +1049,7 @@ class StorageRepository(private val context: Context) {
         queryMediaStoreVideos()
             .filter { selectedFolderIds == null || it.folderId in selectedFolderIds }
             .forEach { item ->
-                val duplicateByNameAndSize = uniqueById.values.any {
-                    it.name == item.name && it.sizeBytes == item.sizeBytes
-                }
-                if (!duplicateByNameAndSize) {
+                if (seenNameAndSize.add(item.name to item.sizeBytes)) {
                     uniqueById[item.id] = item
                 }
             }
@@ -1066,7 +1174,7 @@ class StorageRepository(private val context: Context) {
         }
 
         return DirectorySnapshot(
-            subfolders = subfolders.sortedBy { normalizeForSearch(it.name) },
+            subfolders = subfolders.sortedBy { it.normalizedName },
             videos = videos
         )
     }
@@ -1264,11 +1372,13 @@ class StorageRepository(private val context: Context) {
     path: 'app/src/main/java/com/autocine/player/data/PreferencesManager.kt',
     category: 'core',
     language: 'kotlin',
-    summary: 'Persistência da última pasta, último vídeo com posição (retomada automática), iniciar com a multimídia, tema e escala de UI',
+    summary: 'Persistência lazy (@Immutable) da última pasta, retomada automática, iniciar com a multimídia, tema e escala de UI',
     content: `package com.autocine.player.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Build
+import androidx.compose.runtime.Immutable
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
@@ -1279,11 +1389,14 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 private val Context.dataStore by preferencesDataStore(name = "autocine_prefs")
 
+@Immutable
 enum class PlaybackMode(val label: String) {
     SEQUENTIAL("Sequencial"),
     SHUFFLE("Aleatório"),
@@ -1292,6 +1405,7 @@ enum class PlaybackMode(val label: String) {
     fun next(): PlaybackMode = entries[(ordinal + 1) % entries.size]
 }
 
+@Immutable
 enum class StorageSlot(val label: String) {
     ALL("Todas"),
     USB("Pen Drive"),
@@ -1303,6 +1417,7 @@ enum class StorageSlot(val label: String) {
  * Snapshot persistido de forma síncrona (SharedPreferences) para retomar automaticamente
  * o último vídeo, pasta/subpasta de origem e posição exata mesmo se o app for fechado abruptamente.
  */
+@Immutable
 data class LastPlaybackSnapshot(
     val videoId: String = "",
     val videoUri: String = "",
@@ -1316,6 +1431,7 @@ data class LastPlaybackSnapshot(
     val durationMs: Long = 0L
 )
 
+@Immutable
 data class SavedPlayerPrefs(
     val folderUri: String = "",
     val folderDisplayName: String = "Selecione uma pasta (USB / SD / Interna)",
@@ -1358,16 +1474,21 @@ class PreferencesManager(private val context: Context) {
         private const val SYNC_VOLUME_PERCENT = "sync_volume_percent"
     }
 
-    private val syncStorageContext: Context = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        context.applicationContext.createDeviceProtectedStorageContext() ?: context.applicationContext
-    } else {
-        context.applicationContext
+    private val syncStorageContext: Context by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            context.applicationContext.createDeviceProtectedStorageContext() ?: context.applicationContext
+        } else {
+            context.applicationContext
+        }
     }
 
-    private val resumePrefs = syncStorageContext.getSharedPreferences(
-        RESUME_PREFS_NAME,
-        Context.MODE_PRIVATE
-    )
+    // Lazy para evitar leitura síncrona de XML em disco durante o onCreate() na Main Thread
+    private val resumePrefs: SharedPreferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        syncStorageContext.getSharedPreferences(
+            RESUME_PREFS_NAME,
+            Context.MODE_PRIVATE
+        )
+    }
 
     private object Keys {
         val FOLDER_URI = stringPreferencesKey("saved_folder_uri")
@@ -1550,7 +1671,9 @@ class PreferencesManager(private val context: Context) {
         resumePrefs.getBoolean(SYNC_START_ON_BOOT, true)
 
     suspend fun saveStartOnBoot(enabled: Boolean) {
-        resumePrefs.edit().putBoolean(SYNC_START_ON_BOOT, enabled).commit()
+        withContext(Dispatchers.IO) {
+            resumePrefs.edit().putBoolean(SYNC_START_ON_BOOT, enabled).commit()
+        }
         context.dataStore.edit { it[Keys.START_ON_BOOT] = enabled }
     }
 
@@ -1825,13 +1948,14 @@ class BootReceiver : BroadcastReceiver() {
     path: 'app/src/main/java/com/autocine/player/viewmodel/PlayerViewModel.kt',
     category: 'core',
     language: 'kotlin',
-    summary: 'Estado reativo do player, retomada automática, filtro por pasta, volume por gesto e inicialização no boot',
+    summary: 'Estado reativo @Immutable com PlaybackProgressState isolado, ordenação/busca em Dispatchers.Default e retomada assíncrona',
     content: `package com.autocine.player.viewmodel
 
 import android.app.Application
 import android.net.Uri
 import android.os.Environment
 import android.os.SystemClock
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autocine.player.data.FolderEntry
@@ -1846,15 +1970,30 @@ import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.UiScaleLevel
 import com.autocine.player.vlc.AspectRatioOption
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
+/**
+ * Estado isolado de progresso temporal (atualizado durante a reprodução),
+ * mantido fora do PlayerUiState para evitar recomposições da tela inteira
+ * e da LazyColumn a cada segundo.
+ */
+@Immutable
+data class PlaybackProgressState(
+    val positionMs: Long = 0L,
+    val durationMs: Long = 0L
+)
+
+@Immutable
 data class PlayerUiState(
     val folderUri: String = "",
     val rootFolderName: String = "Nenhuma pasta selecionada",
@@ -1881,8 +2020,6 @@ data class PlayerUiState(
     val currentVideo: VideoFileItem? = null,
     val currentIndexInFolder: Int = -1,
     val isPlaying: Boolean = false,
-    val positionMs: Long = 0L,
-    val durationMs: Long = 0L,
     val playbackMode: PlaybackMode = PlaybackMode.SEQUENTIAL,
     val aspectRatio: AspectRatioOption = AspectRatioOption.FIT,
     val sortOrder: SortOrder = SortOrder.NAME_ASC,
@@ -1900,6 +2037,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private var service: VideoPlaybackService? = null
     private val shuffleBackStack = ArrayDeque<String>()
+    private var searchSortJob: Job? = null
 
     private var savedResumeVideoId: String = ""
     private var savedResumePositionMs: Long = 0L
@@ -1915,10 +2053,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    private val _playbackProgress = MutableStateFlow(PlaybackProgressState())
+    val playbackProgress: StateFlow<PlaybackProgressState> = _playbackProgress.asStateFlow()
+
     init {
         viewModelScope.launch {
-            val saved = prefs.prefsFlow.first()
-            val syncResume = prefs.readLastPlaybackSync()
+            // Carrega DataStore e SharedPreferences fora da Main Thread para o 1º frame renderizar sem bloqueio
+            val (saved, syncResume) = withContext(Dispatchers.IO) {
+                prefs.prefsFlow.first() to prefs.readLastPlaybackSync()
+            }
             val savedSelection = if (saved.allFilterCustomized) saved.selectedAllFolderIds else null
 
             val rawPos = syncResume.positionMs.coerceAtLeast(saved.lastPositionMs)
@@ -1965,6 +2108,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 else -> resumeFolderName
             }
 
+            if (restoredVideo != null) {
+                _playbackProgress.value = PlaybackProgressState(
+                    positionMs = effectiveResumeMs,
+                    durationMs = rawDur
+                )
+            }
+
             _uiState.update {
                 it.copy(
                     folderUri = resumeFolderUri,
@@ -1979,8 +2129,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     isAllFoldersMode = resumeIsAll,
                     selectedAllFolderIds = savedSelection,
                     currentVideo = restoredVideo ?: it.currentVideo,
-                    positionMs = if (restoredVideo != null) effectiveResumeMs else it.positionMs,
-                    durationMs = if (restoredVideo != null) rawDur else it.durationMs,
                     isSplitScreen = false,
                     playbackMode = saved.playbackMode,
                     aspectRatio = saved.aspectRatio,
@@ -2040,13 +2188,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         engine.onTimeChanged = { pos, dur ->
-            _uiState.update { it.copy(positionMs = pos, durationMs = dur) }
+            // Atualiza exclusivamente o StateFlow isolado de progresso (zero recomposição em PlayerUiState)
+            _playbackProgress.value = PlaybackProgressState(positionMs = pos, durationMs = dur)
             val now = SystemClock.elapsedRealtime()
             if (pos > 0L && now - lastPositionSavedElapsedMs >= 3000L) {
                 lastPositionSavedElapsedMs = now
                 savedResumePositionMs = pos
-                prefs.saveLastPositionSync(pos, dur, commitImmediately = false)
-                viewModelScope.launch { prefs.saveLastPositionMs(pos) }
+                viewModelScope.launch(Dispatchers.IO) {
+                    prefs.saveLastPositionSync(pos, dur, commitImmediately = false)
+                    prefs.saveLastPositionMs(pos)
+                }
             }
         }
         engine.onTrackEnded = { playNext() }
@@ -2064,13 +2215,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val matchingIdx = if (matching != null) state.allVideos.indexOf(matching) else state.currentIndexInFolder
             val livePos = engine.getPositionMs()
             val liveDur = engine.getDurationMs()
+            _playbackProgress.value = PlaybackProgressState(positionMs = livePos, durationMs = liveDur)
             _uiState.update {
                 it.copy(
                     currentVideo = matching ?: it.currentVideo,
                     currentIndexInFolder = matchingIdx,
-                    isPlaying = engine.isPlaying(),
-                    positionMs = livePos,
-                    durationMs = liveDur
+                    isPlaying = engine.isPlaying()
                 )
             }
             return
@@ -2087,12 +2237,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun persistPlaybackPosition(commitImmediately: Boolean = false) {
         val state = _uiState.value
         val video = state.currentVideo ?: return
-        val pos = service?.engine?.getPositionMs()?.takeIf { it > 0L } ?: state.positionMs
-        val dur = service?.engine?.getDurationMs()?.takeIf { it > 0L } ?: state.durationMs
+        val progress = _playbackProgress.value
+        val pos = service?.engine?.getPositionMs()?.takeIf { it > 0L } ?: progress.positionMs
+        val dur = service?.engine?.getDurationMs()?.takeIf { it > 0L } ?: progress.durationMs
         savedResumePositionMs = pos
-        saveCurrentSnapshotSync(video, pos, dur, commitImmediately = commitImmediately)
+        if (commitImmediately) {
+            saveCurrentSnapshotSync(video, pos, dur, commitImmediately = true)
+        } else {
+            viewModelScope.launch(Dispatchers.IO) {
+                saveCurrentSnapshotSync(video, pos, dur, commitImmediately = false)
+                if (pos > 0L) {
+                    prefs.saveLastPositionMs(pos)
+                }
+            }
+            return
+        }
         if (pos > 0L) {
-            viewModelScope.launch { prefs.saveLastPositionMs(pos) }
+            viewModelScope.launch(Dispatchers.IO) { prefs.saveLastPositionMs(pos) }
         }
     }
 
@@ -2124,17 +2285,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun onFolderSelected(uriString: String, displayName: String, slot: StorageSlot = StorageSlot.USB) {
         viewModelScope.launch {
-            prefs.saveFolder(uriString, displayName, slot)
+            val resolvedName = if (displayName.isNotBlank()) {
+                displayName
+            } else {
+                val fallback = when (slot) {
+                    StorageSlot.USB -> "Pen Drive"
+                    StorageSlot.SD_CARD -> "Cartão SD"
+                    StorageSlot.INTERNAL -> "Memória Interna"
+                    StorageSlot.ALL -> "Pasta"
+                }
+                repository.resolveTreeDisplayName(Uri.parse(uriString), fallback)
+            }
+            prefs.saveFolder(uriString, resolvedName, slot)
             _uiState.update {
                 when (slot) {
-                    StorageSlot.USB -> it.copy(usbFolderUri = uriString, usbFolderName = displayName)
-                    StorageSlot.SD_CARD -> it.copy(sdFolderUri = uriString, sdFolderName = displayName)
+                    StorageSlot.USB -> it.copy(usbFolderUri = uriString, usbFolderName = resolvedName)
+                    StorageSlot.SD_CARD -> it.copy(sdFolderUri = uriString, sdFolderName = resolvedName)
                     else -> it
                 }
             }
             loadDirectory(
                 uriString = uriString,
-                rootName = displayName,
+                rootName = resolvedName,
                 slot = slot,
                 relativePath = emptyList(),
                 knownDocumentId = null,
@@ -2188,13 +2360,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
             StorageSlot.INTERNAL -> {
-                val internalDir = Environment.getExternalStorageDirectory()
-                if (internalDir != null && internalDir.exists() && internalDir.canRead()) {
-                    val path = internalDir.absolutePath
-                    viewModelScope.launch {
-                        prefs.saveFolder(path, "Memória Interna", StorageSlot.INTERNAL)
+                viewModelScope.launch {
+                    val internalPath = withContext(Dispatchers.IO) {
+                        val internalDir = Environment.getExternalStorageDirectory()
+                        if (internalDir != null && internalDir.exists() && internalDir.canRead()) {
+                            internalDir.absolutePath
+                        } else {
+                            null
+                        }
+                    }
+                    if (internalPath != null) {
+                        prefs.saveFolder(internalPath, "Memória Interna", StorageSlot.INTERNAL)
                         loadDirectory(
-                            uriString = path,
+                            uriString = internalPath,
                             rootName = "Memória Interna",
                             slot = StorageSlot.INTERNAL,
                             relativePath = emptyList(),
@@ -2203,9 +2381,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                             replaceActiveQueue = state.currentVideo == null,
                             forceRefresh = false
                         )
+                    } else {
+                        onRequestFolderPicker(StorageSlot.INTERNAL)
                     }
-                } else {
-                    onRequestFolderPicker(StorageSlot.INTERNAL)
                 }
             }
         }
@@ -2314,21 +2492,27 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     ) {
         val displayTitle = relativePath.lastOrNull() ?: rootName
         val state = _uiState.value
-        val sorted = StorageRepository.sortItems(videos, state.sortOrder)
-        val filtered = StorageRepository.filterBySubstring(sorted, state.searchQuery)
-        _uiState.update {
-            it.copy(
-                isScanning = false,
-                isAllFoldersMode = false,
-                activeStorageSlot = slot,
-                folderUri = uriString,
-                rootFolderName = rootName,
-                folderName = displayTitle,
-                folderBreadcrumbs = relativePath,
-                currentSubfolders = subfolders,
-                browsedVideos = sorted,
-                visibleVideos = filtered
-            )
+        searchSortJob?.cancel()
+        searchSortJob = viewModelScope.launch {
+            val (sorted, filtered) = withContext(Dispatchers.Default) {
+                val s = StorageRepository.sortItems(videos, state.sortOrder)
+                val f = StorageRepository.filterBySubstring(s, state.searchQuery)
+                s to f
+            }
+            _uiState.update {
+                it.copy(
+                    isScanning = false,
+                    isAllFoldersMode = false,
+                    activeStorageSlot = slot,
+                    folderUri = uriString,
+                    rootFolderName = rootName,
+                    folderName = displayTitle,
+                    folderBreadcrumbs = relativePath,
+                    currentSubfolders = subfolders,
+                    browsedVideos = sorted,
+                    visibleVideos = filtered
+                )
+            }
         }
     }
 
@@ -2512,13 +2696,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         applyLoadedPlaylist(snapshot.videos, autoResumeVideoId, replaceActiveQueue = replaceActiveQueue)
     }
 
-    private fun applyLoadedPlaylist(
+    private suspend fun applyLoadedPlaylist(
         scanned: List<VideoFileItem>,
         autoResumeVideoId: String,
         replaceActiveQueue: Boolean
     ) {
-        val sorted = StorageRepository.sortItems(scanned, _uiState.value.sortOrder)
-        val filtered = StorageRepository.filterBySubstring(sorted, _uiState.value.searchQuery)
+        searchSortJob?.cancel()
+        val sortOrder = _uiState.value.sortOrder
+        val searchQuery = _uiState.value.searchQuery
+        val (sorted, filtered) = withContext(Dispatchers.Default) {
+            val s = StorageRepository.sortItems(scanned, sortOrder)
+            val f = StorageRepository.filterBySubstring(s, searchQuery)
+            s to f
+        }
 
         if (!replaceActiveQueue && _uiState.value.currentVideo != null) {
             _uiState.update {
@@ -2541,6 +2731,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val existingCurrent = _uiState.value.currentVideo
             val target = runningMatch ?: existingCurrent ?: sorted.firstOrNull()
             val idx = if (target != null) sorted.indexOfFirst { it.id == target.id || it.uri == target.uri } else -1
+            if (engine != null) {
+                _playbackProgress.value = PlaybackProgressState(
+                    positionMs = engine.getPositionMs(),
+                    durationMs = engine.getDurationMs()
+                )
+            }
             _uiState.update {
                 it.copy(
                     allVideos = sorted,
@@ -2549,8 +2745,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     currentVideo = target,
                     currentIndexInFolder = idx,
                     isPlaying = engine?.isPlaying() == true,
-                    positionMs = engine?.getPositionMs() ?: it.positionMs,
-                    durationMs = engine?.getDurationMs() ?: it.durationMs,
                     isScanning = false
                 )
             }
@@ -2580,10 +2774,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    private fun isSameVideoQueue(a: List<VideoFileItem>, b: List<VideoFileItem>): Boolean {
+        if (a.size != b.size) return false
+        for (i in a.indices) {
+            if (a[i].id != b[i].id) return false
+        }
+        return true
+    }
+
     fun playVideoFromList(item: VideoFileItem) {
         val state = _uiState.value
         val currentBrowsed = state.browsedVideos
-        val switchingQueue = currentBrowsed.map { it.id } != state.allVideos.map { it.id }
+        val switchingQueue = !isSameVideoQueue(currentBrowsed, state.allVideos)
         if (switchingQueue) {
             shuffleBackStack.clear()
         } else if (state.playbackMode == PlaybackMode.SHUFFLE) {
@@ -2599,8 +2801,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         activeQueueStorageSlot = state.activeStorageSlot
         activeQueueIsAllMode = state.isAllFoldersMode
 
-        if (currentBrowsed.any { it.id == item.id }) {
-            val idx = currentBrowsed.indexOfFirst { it.id == item.id }
+        val idx = currentBrowsed.indexOfFirst { it.id == item.id }
+        if (idx >= 0) {
             _uiState.update { it.copy(allVideos = currentBrowsed, currentIndexInFolder = idx) }
         }
         val isSameRunning = service?.engine?.hasActiveMediaFor(item.uri) == true
@@ -2624,12 +2826,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val idx = _uiState.value.allVideos.indexOfFirst { it.id == item.id }
 
         if (!forceRestart && svc.engine.hasActiveMediaFor(item.uri)) {
+            _playbackProgress.value = PlaybackProgressState(
+                positionMs = svc.engine.getPositionMs(),
+                durationMs = svc.engine.getDurationMs()
+            )
             _uiState.update {
                 it.copy(
                     currentVideo = item,
-                    currentIndexInFolder = idx,
-                    positionMs = svc.engine.getPositionMs(),
-                    durationMs = svc.engine.getDurationMs()
+                    currentIndexInFolder = idx
                 )
             }
             svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = false)
@@ -2639,22 +2843,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val prevState = _uiState.value
-        val initialDurationMs = if (prevState.currentVideo?.id == item.id) prevState.durationMs else 0L
+        val initialDurationMs = if (prevState.currentVideo?.id == item.id) _playbackProgress.value.durationMs else 0L
         savedResumeVideoId = item.id
         savedResumePositionMs = resumePositionMs
+        _playbackProgress.value = PlaybackProgressState(
+            positionMs = resumePositionMs,
+            durationMs = initialDurationMs
+        )
         _uiState.update {
             it.copy(
                 currentVideo = item,
-                currentIndexInFolder = idx,
-                positionMs = resumePositionMs,
-                durationMs = initialDurationMs
+                currentIndexInFolder = idx
             )
         }
-        saveCurrentSnapshotSync(item, resumePositionMs, initialDurationMs, commitImmediately = false)
         svc.engine.applyAspectRatio(_uiState.value.aspectRatio)
         svc.engine.playUri(item.uri, startPositionMs = resumePositionMs, forceRestart = forceRestart)
         svc.updateNotification(item.name, true)
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            saveCurrentSnapshotSync(item, resumePositionMs, initialDurationMs, commitImmediately = false)
             prefs.saveLastVideoId(item.id)
             prefs.saveLastPositionMs(resumePositionMs)
         }
@@ -2725,7 +2931,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun seekTo(positionMs: Long) {
         service?.engine?.seekTo(positionMs)
         savedResumePositionMs = positionMs
-        _uiState.update { it.copy(positionMs = positionMs) }
+        _playbackProgress.update { it.copy(positionMs = positionMs) }
     }
 
     fun cyclePlaybackMode() {
@@ -2734,41 +2940,61 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             shuffleBackStack.clear()
         }
         _uiState.update { it.copy(playbackMode = next) }
-        viewModelScope.launch { prefs.savePlaybackMode(next) }
+        viewModelScope.launch(Dispatchers.IO) { prefs.savePlaybackMode(next) }
     }
 
     fun cycleAspectRatio() {
         val next = _uiState.value.aspectRatio.next()
         _uiState.update { it.copy(aspectRatio = next) }
         service?.engine?.applyAspectRatio(next)
-        viewModelScope.launch { prefs.saveAspectRatio(next) }
+        viewModelScope.launch(Dispatchers.IO) { prefs.saveAspectRatio(next) }
     }
 
     fun updateSearchQuery(query: String) {
-        _uiState.update { state ->
-            state.copy(
-                searchQuery = query,
-                visibleVideos = StorageRepository.filterBySubstring(state.browsedVideos, query)
-            )
+        _uiState.update { it.copy(searchQuery = query) }
+        val browsed = _uiState.value.browsedVideos
+        searchSortJob?.cancel()
+        searchSortJob = viewModelScope.launch {
+            val filtered = withContext(Dispatchers.Default) {
+                StorageRepository.filterBySubstring(browsed, query)
+            }
+            _uiState.update { state ->
+                if (state.searchQuery == query) state.copy(visibleVideos = filtered) else state
+            }
         }
     }
 
     fun cycleSortOrder() {
-        val next = _uiState.value.sortOrder.next()
-        _uiState.update { state ->
-            val sortedBrowsed = StorageRepository.sortItems(state.browsedVideos, next)
-            val sortedQueue = StorageRepository.sortItems(state.allVideos, next)
-            val newIndex = state.currentVideo?.let { cur -> sortedQueue.indexOfFirst { it.id == cur.id } } ?: -1
-            state.copy(
-                sortOrder = next,
-                allVideos = sortedQueue,
-                browsedVideos = sortedBrowsed,
-                visibleVideos = StorageRepository.filterBySubstring(sortedBrowsed, state.searchQuery),
-                currentIndexInFolder = newIndex
-            )
+        val state = _uiState.value
+        val next = state.sortOrder.next()
+        _uiState.update { it.copy(sortOrder = next) }
+        searchSortJob?.cancel()
+        searchSortJob = viewModelScope.launch {
+            val (sortedBrowsed, sortedQueue, filtered, newIndex) = withContext(Dispatchers.Default) {
+                val sb = StorageRepository.sortItems(state.browsedVideos, next)
+                val sq = StorageRepository.sortItems(state.allVideos, next)
+                val fl = StorageRepository.filterBySubstring(sb, state.searchQuery)
+                val idx = state.currentVideo?.let { cur -> sq.indexOfFirst { it.id == cur.id } } ?: -1
+                SortResult(sb, sq, fl, idx)
+            }
+            _uiState.update {
+                it.copy(
+                    allVideos = sortedQueue,
+                    browsedVideos = sortedBrowsed,
+                    visibleVideos = filtered,
+                    currentIndexInFolder = newIndex
+                )
+            }
+            withContext(Dispatchers.IO) { prefs.saveSortOrder(next) }
         }
-        viewModelScope.launch { prefs.saveSortOrder(next) }
     }
+
+    private data class SortResult(
+        val sortedBrowsed: List<VideoFileItem>,
+        val sortedQueue: List<VideoFileItem>,
+        val filtered: List<VideoFileItem>,
+        val newIndex: Int
+    )
 
     fun setSplitScreen(enabled: Boolean) {
         _uiState.update { it.copy(isSplitScreen = enabled) }
@@ -2792,16 +3018,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val deleted = repository.deleteVideo(target)
             _uiState.update { it.copy(pendingDeleteItem = null) }
             if (deleted) {
-                val remainingQueue = _uiState.value.allVideos.filterNot { it.id == target.id }
-                val remainingBrowsed = _uiState.value.browsedVideos.filterNot { it.id == target.id }
-                val wasCurrent = _uiState.value.currentVideo?.id == target.id
-                val nextCurrent = if (wasCurrent) remainingQueue.firstOrNull() else _uiState.value.currentVideo
-                val newIdx = nextCurrent?.let { c -> remainingQueue.indexOfFirst { it.id == c.id } } ?: -1
+                val state = _uiState.value
+                val wasCurrent = state.currentVideo?.id == target.id
+                val (remainingQueue, remainingBrowsed, filtered, nextCurrent, newIdx) = withContext(Dispatchers.Default) {
+                    val rq = state.allVideos.filterNot { it.id == target.id }
+                    val rb = state.browsedVideos.filterNot { it.id == target.id }
+                    val fl = StorageRepository.filterBySubstring(rb, state.searchQuery)
+                    val nc = if (wasCurrent) rq.firstOrNull() else state.currentVideo
+                    val idx = nc?.let { c -> rq.indexOfFirst { it.id == c.id } } ?: -1
+                    DeleteResult(rq, rb, fl, nc, idx)
+                }
                 _uiState.update {
                     it.copy(
                         allVideos = remainingQueue,
                         browsedVideos = remainingBrowsed,
-                        visibleVideos = StorageRepository.filterBySubstring(remainingBrowsed, it.searchQuery),
+                        visibleVideos = filtered,
                         currentVideo = nextCurrent,
                         currentIndexInFolder = newIdx
                     )
@@ -2812,6 +3043,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    private data class DeleteResult(
+        val remainingQueue: List<VideoFileItem>,
+        val remainingBrowsed: List<VideoFileItem>,
+        val filtered: List<VideoFileItem>,
+        val nextCurrent: VideoFileItem?,
+        val newIndex: Int
+    )
 }
 `,
   },

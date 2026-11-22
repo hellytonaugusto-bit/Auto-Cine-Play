@@ -5,7 +5,7 @@ export const KOTLIN_UI_FILES: AndroidProjectFile[] = [
     path: 'app/src/main/java/com/autocine/player/ui/theme/Theme.kt',
     category: 'ui',
     language: 'kotlin',
-    summary: 'Tema automotivo com 6 paletas de cores e 4 níveis de escala de UI via LocalDensity',
+    summary: 'Tema automotivo com 6 paletas @Immutable e 4 níveis de escala de UI memorizados via LocalDensity',
     content: `package com.autocine.player.ui.theme
 
 import androidx.compose.material3.MaterialTheme
@@ -13,11 +13,13 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 
+@Immutable
 enum class UiScaleLevel(val label: String, val factor: Float) {
     SMALL("Pequeno", 0.85f),
     DEFAULT("Padrão", 1.0f),
@@ -25,6 +27,7 @@ enum class UiScaleLevel(val label: String, val factor: Float) {
     EXTRA_LARGE("Extra Grande", 1.30f)
 }
 
+@Immutable
 enum class AppColorTheme(
     val label: String,
     val accent: Color,
@@ -108,31 +111,37 @@ fun AutoCineTheme(
     uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     content: @Composable () -> Unit
 ) {
-    val palette = AutoCinePalette(
-        accent = colorTheme.accent,
-        accentDark = colorTheme.accentDark,
-        accentContainer = colorTheme.accentContainer,
-        accentSoft = colorTheme.accentSoft,
-        onAccent = colorTheme.onAccent
-    )
+    val palette = remember(colorTheme) {
+        AutoCinePalette(
+            accent = colorTheme.accent,
+            accentDark = colorTheme.accentDark,
+            accentContainer = colorTheme.accentContainer,
+            accentSoft = colorTheme.accentSoft,
+            onAccent = colorTheme.onAccent
+        )
+    }
 
-    val colorScheme = darkColorScheme(
-        primary = colorTheme.accent,
-        onPrimary = colorTheme.onAccent,
-        primaryContainer = colorTheme.accentContainer,
-        onPrimaryContainer = Color.White,
-        background = Color(0xFF07090D),
-        surface = Color(0xFF0C1018),
-        onBackground = Color(0xFFF1F5F9),
-        onSurface = Color(0xFFF1F5F9),
-        error = Color(0xFFEF4444)
-    )
+    val colorScheme = remember(colorTheme) {
+        darkColorScheme(
+            primary = colorTheme.accent,
+            onPrimary = colorTheme.onAccent,
+            primaryContainer = colorTheme.accentContainer,
+            onPrimaryContainer = Color.White,
+            background = Color(0xFF07090D),
+            surface = Color(0xFF0C1018),
+            onBackground = Color(0xFFF1F5F9),
+            onSurface = Color(0xFFF1F5F9),
+            error = Color(0xFFEF4444)
+        )
+    }
 
     val baseDensity = LocalDensity.current
-    val scaledDensity = Density(
-        density = baseDensity.density * uiScaleLevel.factor,
-        fontScale = baseDensity.fontScale * uiScaleLevel.factor
-    )
+    val scaledDensity = remember(baseDensity, uiScaleLevel) {
+        Density(
+            density = baseDensity.density * uiScaleLevel.factor,
+            fontScale = baseDensity.fontScale * uiScaleLevel.factor
+        )
+    }
 
     CompositionLocalProvider(
         LocalAutoCinePalette provides palette,
@@ -150,7 +159,7 @@ fun AutoCineTheme(
     path: 'app/src/main/java/com/autocine/player/ui/GestureOverlay.kt',
     category: 'ui',
     language: 'kotlin',
-    summary: 'Detector unificado de gestos (awaitEachGesture): brilho à esquerda, volume à direita e avanço/retrocesso horizontal',
+    summary: 'Detector unificado de gestos (awaitEachGesture) desacoplado de ticks de tempo e formatMs sem alocação de Formatter',
     content: `package com.autocine.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -207,8 +216,8 @@ private enum class GestureAxis { NONE, SEEK, BRIGHTNESS, VOLUME }
 
 @Composable
 fun GestureOverlay(
-    positionMs: Long,
-    durationMs: Long,
+    getPositionMs: () -> Long,
+    getDurationMs: () -> Long,
     onTapToggleControls: () -> Unit,
     onSeekCommit: (Long) -> Unit,
     onGetBrightness: () -> Float,
@@ -220,9 +229,9 @@ fun GestureOverlay(
     val palette = LocalAutoCinePalette.current
     val scope = rememberCoroutineScope()
 
-    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (evita congelamento do HUD)
-    val latestPositionMs by rememberUpdatedState(positionMs)
-    val latestDurationMs by rememberUpdatedState(durationMs)
+    // Referências estáveis sem reiniciar pointerInput nem recompor o GestureOverlay a cada segundo do vídeo
+    val latestGetPositionMs by rememberUpdatedState(getPositionMs)
+    val latestGetDurationMs by rememberUpdatedState(getDurationMs)
     val latestOnTap by rememberUpdatedState(onTapToggleControls)
     val latestOnSeekCommit by rememberUpdatedState(onSeekCommit)
     val latestOnGetBrightness by rememberUpdatedState(onGetBrightness)
@@ -234,6 +243,7 @@ fun GestureOverlay(
     var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }
     var hudValue by remember { mutableFloatStateOf(0f) }
     var hudSeekTargetMs by remember { mutableLongStateOf(0L) }
+    var hudSeekDurationMs by remember { mutableLongStateOf(0L) }
     var hudSeekDeltaSec by remember { mutableLongStateOf(0L) }
     var hideHudJob by remember { mutableStateOf<Job?>(null) }
 
@@ -260,7 +270,7 @@ fun GestureOverlay(
                 // - Toque simples alterna controles
                 // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)
                 // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)
-                // - Arrasto vertical na metade DIREITA: volume de mídia Android (STREAM_MUSIC)
+                // - Arrasto vertical na metade DIREITA: volume híbrido (libVLC + STREAM_MUSIC)
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
                     val downPos = down.position
@@ -269,7 +279,8 @@ fun GestureOverlay(
 
                     var activeAxis = GestureAxis.NONE
                     var startValue = 0f
-                    val startPosMs = latestPositionMs
+                    val startPosMs = latestGetPositionMs()
+                    val startDurMs = latestGetDurationMs().coerceAtLeast(0L)
                     var dragTargetMs = startPosMs
                     var pointerMovedBeyondSlop = false
 
@@ -302,7 +313,10 @@ fun GestureOverlay(
                                 hideHudJob?.cancel()
 
                                 activeAxis = when {
-                                    abs(totalDx) > abs(totalDy) * 1.25f -> GestureAxis.SEEK
+                                    abs(totalDx) > abs(totalDy) * 1.25f -> {
+                                        hudSeekDurationMs = startDurMs
+                                        GestureAxis.SEEK
+                                    }
                                     startX < size.width / 2f -> {
                                         startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
                                         hudValue = startValue
@@ -322,13 +336,14 @@ fun GestureOverlay(
 
                             when (activeAxis) {
                                 GestureAxis.SEEK -> {
-                                    val dur = latestDurationMs.coerceAtLeast(0L)
+                                    val dur = latestGetDurationMs().coerceAtLeast(startDurMs)
                                     val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)
                                     val widthPx = size.width.coerceAtLeast(1).toFloat()
                                     val deltaMs = ((totalDx / widthPx) * spanMs).toLong()
                                     val target = (startPosMs + deltaMs).coerceIn(0L, dur)
                                     dragTargetMs = target
                                     hudSeekTargetMs = target
+                                    hudSeekDurationMs = dur
                                     hudSeekDeltaSec = (target - startPosMs) / 1000L
                                 }
                                 GestureAxis.BRIGHTNESS -> {
@@ -388,7 +403,7 @@ fun GestureOverlay(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "\${formatMs(hudSeekTargetMs)} / \${formatMs(latestDurationMs)}",
+                            text = "\${formatMs(hudSeekTargetMs)} / \${formatMs(hudSeekDurationMs)}",
                             color = Color(0xFFCBD5E1),
                             fontSize = 14.sp
                         )
@@ -452,11 +467,19 @@ fun GestureOverlay(
 
 fun formatMs(ms: Long): String {
     val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val hrs = totalSec / 3600
-    val mins = (totalSec % 3600) / 60
-    val secs = totalSec % 60
-    return if (hrs > 0) "%02d:%02d:%02d".format(hrs, mins, secs)
-    else "%02d:%02d".format(mins, secs)
+    val hrs = (totalSec / 3600L).toInt()
+    val mins = ((totalSec % 3600L) / 60L).toInt()
+    val secs = (totalSec % 60L).toInt()
+    val sb = StringBuilder(8)
+    if (hrs > 0) {
+        if (hrs < 10) sb.append('0')
+        sb.append(hrs).append(':')
+    }
+    if (mins < 10) sb.append('0')
+    sb.append(mins).append(':')
+    if (secs < 10) sb.append('0')
+    sb.append(secs)
+    return sb.toString()
 }
 `,
   },
@@ -464,7 +487,7 @@ fun formatMs(ms: Long): String {
     path: 'app/src/main/java/com/autocine/player/ui/FullScreenControls.kt',
     category: 'ui',
     language: 'kotlin',
-    summary: 'Overlay em tela cheia com auto-hide de 3.5s, barra de progresso, proporção, modo de repetição e PiP',
+    summary: 'Overlay em tela cheia com FullScreenProgressBar isolada (zero recomposição por segundo no resto da tela)',
     content: `package com.autocine.player.ui
 
 import androidx.compose.animation.AnimatedVisibility
@@ -503,7 +526,13 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -514,12 +543,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autocine.player.data.PlaybackMode
 import com.autocine.player.ui.theme.LocalAutoCinePalette
+import com.autocine.player.viewmodel.PlaybackProgressState
 import com.autocine.player.viewmodel.PlayerUiState
+import kotlinx.coroutines.flow.StateFlow
+
+private val TopScrimBrush = Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent))
+private val BottomScrimBrush = Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D)))
+private val ControlChipShape = RoundedCornerShape(16.dp)
+private val ControlChipColor = Color(0x991E293B)
+private val CenterButtonBgColor = Color(0xB30F172A)
+
+private fun formatTwoDigitIndex(value: Int): String = if (value < 10) "0$value" else value.toString()
 
 @Composable
 fun FullScreenControls(
     visible: Boolean,
     state: PlayerUiState,
+    progressFlow: StateFlow<PlaybackProgressState>,
     onTogglePlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -530,8 +570,19 @@ fun FullScreenControls(
     onEnterPip: () -> Unit
 ) {
     val palette = LocalAutoCinePalette.current
-    val topScrim = remember { Brush.verticalGradient(colors = listOf(Color(0xD907090D), Color.Transparent)) }
-    val bottomScrim = remember { Brush.verticalGradient(colors = listOf(Color.Transparent, Color(0xEB07090D))) }
+
+    val headerLabel by remember(state.currentVideo?.name, state.currentIndexInFolder, state.allVideos.size) {
+        derivedStateOf {
+            val video = state.currentVideo
+            if (video != null) {
+                val total = state.allVideos.size
+                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0
+                "\${formatTwoDigitIndex(idxDisplay)}/\${formatTwoDigitIndex(total)} - \${video.name}"
+            } else {
+                "Toque em Pastas para escolher vídeos (USB / SD)"
+            }
+        }
+    }
 
     AnimatedVisibility(
         visible = visible,
@@ -547,17 +598,9 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.TopCenter)
-                    .background(topScrim)
+                    .background(TopScrimBrush)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
-                val total = state.allVideos.size
-                val idxDisplay = if (state.currentIndexInFolder >= 0) state.currentIndexInFolder + 1 else 0
-                val headerLabel = if (state.currentVideo != null) {
-                    "%02d/%02d - %s".format(idxDisplay, total, state.currentVideo.name)
-                } else {
-                    "Toque em Pastas para escolher vídeos (USB / SD)"
-                }
-
                 Text(
                     text = headerLabel,
                     color = Color.White,
@@ -572,8 +615,8 @@ fun FullScreenControls(
 
                 Surface(
                     onClick = onEnterPip,
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color(0x991E293B),
+                    shape = ControlChipShape,
+                    color = ControlChipColor,
                     modifier = Modifier.height(58.dp)
                 ) {
                     Row(
@@ -601,7 +644,7 @@ fun FullScreenControls(
                 Surface(
                     onClick = onPrev,
                     shape = CircleShape,
-                    color = Color(0xB30F172A),
+                    color = CenterButtonBgColor,
                     modifier = Modifier.size(88.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -633,7 +676,7 @@ fun FullScreenControls(
                 Surface(
                     onClick = onNext,
                     shape = CircleShape,
-                    color = Color(0xB30F172A),
+                    color = CenterButtonBgColor,
                     modifier = Modifier.size(88.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -652,30 +695,15 @@ fun FullScreenControls(
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
-                    .background(bottomScrim)
+                    .background(BottomScrimBrush)
                     .padding(horizontal = 24.dp, vertical = 18.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(formatMs(state.positionMs), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    val maxDuration = state.durationMs.coerceAtLeast(1L).toFloat()
-                    Slider(
-                        value = state.positionMs.toFloat().coerceIn(0f, maxDuration),
-                        onValueChange = { onSeek(it.toLong()) },
-                        valueRange = 0f..maxDuration,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color.White,
-                            activeTrackColor = palette.accent,
-                            inactiveTrackColor = Color(0x4DFFFFFF)
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 14.dp)
-                    )
-                    Text(formatMs(state.durationMs), color = Color(0xFFCBD5E1), fontSize = 16.sp)
-                }
+                // Barra de progresso 100% isolada: somente este Composable recompõe ao longo do tempo
+                FullScreenProgressBar(
+                    progressFlow = progressFlow,
+                    accentColor = palette.accent,
+                    onSeek = onSeek
+                )
 
                 Spacer(Modifier.height(10.dp))
 
@@ -688,8 +716,8 @@ fun FullScreenControls(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Surface(
                             onClick = onCycleMode,
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0x991E293B),
+                            shape = ControlChipShape,
+                            color = ControlChipColor,
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
@@ -709,8 +737,8 @@ fun FullScreenControls(
 
                         Surface(
                             onClick = onCycleAspect,
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color(0x991E293B),
+                            shape = ControlChipShape,
+                            color = ControlChipColor,
                             modifier = Modifier.height(64.dp)
                         ) {
                             Row(
@@ -745,7 +773,7 @@ fun FullScreenControls(
                     // Direita: Botão grande Pastas / Lista (64dp)
                     Surface(
                         onClick = onOpenSplitList,
-                        shape = RoundedCornerShape(16.dp),
+                        shape = ControlChipShape,
                         color = Color(0xFF1E293B),
                         modifier = Modifier.height(64.dp)
                     ) {
@@ -763,13 +791,71 @@ fun FullScreenControls(
         }
     }
 }
+
+/**
+ * Composable dedicado e isolado para a linha do tempo e o Slider.
+ * Coleta apenas o StateFlow de progresso, evitando recomposições em cascata
+ * do FullScreenControls, PlayerScreen e VlcVideoSurface a cada tick do vídeo.
+ */
+@Composable
+private fun FullScreenProgressBar(
+    progressFlow: StateFlow<PlaybackProgressState>,
+    accentColor: Color,
+    onSeek: (Long) -> Unit
+) {
+    val progress by progressFlow.collectAsState()
+    var isDragging by remember { mutableStateOf(false) }
+    var dragValue by remember { mutableFloatStateOf(0f) }
+
+    val maxDuration = progress.durationMs.coerceAtLeast(1L).toFloat()
+    val displayedPositionMs = if (isDragging) dragValue.toLong() else progress.positionMs
+    val sliderValue = (if (isDragging) dragValue else progress.positionMs.toFloat()).coerceIn(0f, maxDuration)
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = formatMs(displayedPositionMs),
+            color = Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Slider(
+            value = sliderValue,
+            onValueChange = { next ->
+                isDragging = true
+                dragValue = next
+            },
+            onValueChangeFinished = {
+                val targetMs = dragValue.toLong()
+                isDragging = false
+                onSeek(targetMs)
+            },
+            valueRange = 0f..maxDuration,
+            colors = SliderDefaults.colors(
+                thumbColor = Color.White,
+                activeTrackColor = accentColor,
+                inactiveTrackColor = Color(0x4DFFFFFF)
+            ),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 14.dp)
+        )
+        Text(
+            text = formatMs(progress.durationMs),
+            color = Color(0xFFCBD5E1),
+            fontSize = 16.sp
+        )
+    }
+}
 `,
   },
   {
     path: 'app/src/main/java/com/autocine/player/ui/SplitScreenBrowser.kt',
     category: 'ui',
     language: 'kotlin',
-    summary: 'Tela dividida com mini-player limpo e rolável, diálogo recolhido, miniaturas LruCache e opção Iniciar com a Multimídia',
+    summary: 'Tela dividida otimizada com LruCache em KB (10% RAM, RGB_565), derivedStateOf e LazyColumn com rows estáveis',
     content: `package com.autocine.player.ui
 
 import android.graphics.Bitmap
@@ -840,6 +926,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -855,11 +942,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autocine.player.data.FolderEntry
+import com.autocine.player.data.StorageRepository
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.data.VideoFileItem
 import com.autocine.player.ui.theme.AppColorTheme
@@ -874,21 +963,59 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.util.Collections
+import kotlin.math.roundToInt
 
+private val ThumbWidthDp = 96.dp
+private val ThumbHeightDp = 54.dp
+private val ThumbShape10 = RoundedCornerShape(10.dp)
+private val RowShape14 = RoundedCornerShape(14.dp)
+private val IconBoxShape12 = RoundedCornerShape(12.dp)
+private val SubfolderCardBg = Color(0xFF111827)
+private val SubtleBorderColor = Color(0x1FFFFFFF)
+private val DividerColor = Color(0x14FFFFFF)
+
+private fun formatTwoDigits(value: Int): String = if (value < 10) "0$value" else value.toString()
+
+/**
+ * Cache de miniaturas limitado em KB a ~10% da memória máxima da JVM
+ * (entre 4 MB e 24 MB), evitando OOM em centrais 32-bit com pouca RAM.
+ */
 private object VideoThumbnailMemoryCache {
-    private val cache = LruCache<String, ImageBitmap>(60)
-    private val failedKeys = Collections.synchronizedSet(HashSet<String>())
-    val decodeSemaphore = Semaphore(2)
+    private val maxMemoryKb = (Runtime.getRuntime().maxMemory() / 1024L).toInt().coerceAtLeast(16 * 1024)
+    private val cacheSizeKb = (maxMemoryKb / 10).coerceIn(4 * 1024, 24 * 1024)
 
-    fun get(key: String): ImageBitmap? = cache.get(key)
+    class Entry(val image: ImageBitmap, val sizeKb: Int)
+
+    private val cache = object : LruCache<String, Entry>(cacheSizeKb) {
+        override fun sizeOf(key: String, value: Entry): Int = value.sizeKb.coerceAtLeast(1)
+    }
+    private val failedKeys = Collections.synchronizedSet(HashSet<String>())
+    // 1 decodificação por vez evita disputar decoders HW com a libVLC e saturação do USB 2.0
+    val decodeSemaphore = Semaphore(1)
+
+    fun get(key: String): ImageBitmap? = cache.get(key)?.image
     fun hasFailed(key: String): Boolean = failedKeys.contains(key)
-    fun put(key: String, bitmap: ImageBitmap) {
-        cache.put(key, bitmap)
+    fun put(key: String, bitmap: ImageBitmap, sizeKb: Int) {
+        cache.put(key, Entry(bitmap, sizeKb))
     }
     fun markFailed(key: String) {
         if (failedKeys.size > 300) failedKeys.clear()
         failedKeys.add(key)
     }
+    fun trimToHalf() {
+        cache.trimToSize(cacheSizeKb / 2)
+    }
+    fun clear() {
+        cache.evictAll()
+    }
+}
+
+fun trimVideoThumbnailCache() {
+    VideoThumbnailMemoryCache.trimToHalf()
+}
+
+fun clearVideoThumbnailCache() {
+    VideoThumbnailMemoryCache.clear()
 }
 
 @Composable
@@ -899,40 +1026,61 @@ private fun VideoListThumbnail(
 ) {
     val palette = LocalAutoCinePalette.current
     val context = LocalContext.current
+    val density = LocalDensity.current
+    // Calcula exatamente a resolução em pixels exibida na lista (evita alocar frames 720p/1080p na RAM)
+    val targetWidthPx = remember(density) {
+        with(density) { ThumbWidthDp.toPx().roundToInt().coerceIn(96, 192) }
+    }
+    val targetHeightPx = remember(density) {
+        with(density) { ThumbHeightDp.toPx().roundToInt().coerceIn(54, 108) }
+    }
     var bitmap by remember(item.id) { mutableStateOf(VideoThumbnailMemoryCache.get(item.id)) }
 
-    LaunchedEffect(item.id) {
+    LaunchedEffect(item.id, targetWidthPx, targetHeightPx) {
         if (bitmap == null && !VideoThumbnailMemoryCache.hasFailed(item.id)) {
             // Pequeno atraso antes de acessar o Pen Drive: se o usuário rolar rapidamente,
             // a coroutine é cancelada automaticamente antes de abrir o MediaMetadataRetriever.
-            delay(120L)
+            delay(140L)
             val loaded = withContext(Dispatchers.IO) {
                 ensureActive()
                 VideoThumbnailMemoryCache.decodeSemaphore.withPermit {
                     ensureActive()
-                    VideoThumbnailMemoryCache.get(item.id)?.let { return@withPermit it }
+                    VideoThumbnailMemoryCache.get(item.id)?.let { return@withPermit it to 0 }
                     val retriever = MediaMetadataRetriever()
                     try {
                         retriever.setDataSource(context, item.uri)
                         ensureActive()
-                        val frame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                        val rawFrame = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                             retriever.getScaledFrameAtTime(
                                 1_500_000L,
                                 MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                                192,
-                                108
+                                targetWidthPx,
+                                targetHeightPx
                             )
                         } else {
                             retriever.getFrameAtTime(
                                 1_500_000L,
                                 MediaMetadataRetriever.OPTION_CLOSEST_SYNC
                             )?.let { full ->
-                                val scaled = Bitmap.createScaledBitmap(full, 192, 108, true)
+                                val scaled = Bitmap.createScaledBitmap(full, targetWidthPx, targetHeightPx, true)
                                 if (scaled != full) full.recycle()
                                 scaled
                             }
                         }
-                        frame?.asImageBitmap()
+                        if (rawFrame == null) {
+                            null
+                        } else {
+                            // Converte para RGB_565 (2 bytes/px em vez de 4 bytes/px = metade da RAM)
+                            val compact = if (rawFrame.config != Bitmap.Config.RGB_565) {
+                                rawFrame.copy(Bitmap.Config.RGB_565, false)?.also {
+                                    rawFrame.recycle()
+                                } ?: rawFrame
+                            } else {
+                                rawFrame
+                            }
+                            val sizeKb = (compact.allocationByteCount / 1024).coerceAtLeast(1)
+                            compact.asImageBitmap() to sizeKb
+                        }
                     } catch (ce: CancellationException) {
                         throw ce
                     } catch (_: Throwable) {
@@ -943,8 +1091,11 @@ private fun VideoListThumbnail(
                 }
             }
             if (loaded != null) {
-                VideoThumbnailMemoryCache.put(item.id, loaded)
-                bitmap = loaded
+                val (image, sizeKb) = loaded
+                if (sizeKb > 0) {
+                    VideoThumbnailMemoryCache.put(item.id, image, sizeKb)
+                }
+                bitmap = image
             } else {
                 VideoThumbnailMemoryCache.markFailed(item.id)
             }
@@ -954,14 +1105,14 @@ private fun VideoListThumbnail(
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
-            .width(96.dp)
-            .height(54.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .width(ThumbWidthDp)
+            .height(ThumbHeightDp)
+            .clip(ThumbShape10)
             .background(Color(0xFF0F172A))
             .border(
                 width = if (isCurrent) 2.dp else 1.dp,
-                color = if (isCurrent) palette.accent else Color(0x1FFFFFFF),
-                shape = RoundedCornerShape(10.dp)
+                color = if (isCurrent) palette.accent else SubtleBorderColor,
+                shape = ThumbShape10
             )
     ) {
         val bmp = bitmap
@@ -1275,26 +1426,51 @@ fun SplitScreenFileList(
     val palette = LocalAutoCinePalette.current
     val listState = rememberLazyListState()
 
-    val activeVideoIndex by remember(state.currentVideo?.id, state.visibleVideos) {
-        derivedStateOf {
-            state.visibleVideos.indexOfFirst { it.id == state.currentVideo?.id }
-        }
+    val hasSearchQuery by remember(state.searchQuery) {
+        derivedStateOf { state.searchQuery.isNotEmpty() }
     }
 
-    val subtitleText by remember(state.currentSubfolders.size, state.visibleVideos.size) {
+    val filteredSubfolders by remember(state.currentSubfolders, state.searchQuery, state.isAllFoldersMode) {
         derivedStateOf {
-            buildString {
-                if (state.currentSubfolders.isNotEmpty()) {
-                    append("\${state.currentSubfolders.size} subpastas · ")
-                }
-                append("\${state.visibleVideos.size} vídeos")
+            if (state.isAllFoldersMode || state.currentSubfolders.isEmpty()) {
+                emptyList()
+            } else {
+                val q = StorageRepository.normalizeForSearch(state.searchQuery)
+                if (q.isEmpty()) state.currentSubfolders
+                else state.currentSubfolders.filter { it.normalizedName.contains(q) }
             }
         }
     }
 
-    LaunchedEffect(activeVideoIndex, state.currentSubfolders.size) {
+    val showSubfoldersSection by remember(filteredSubfolders) {
+        derivedStateOf { filteredSubfolders.isNotEmpty() }
+    }
+
+    val activeVideoIndex by remember(state.currentVideo?.id, state.visibleVideos) {
+        derivedStateOf {
+            val activeId = state.currentVideo?.id ?: return@derivedStateOf -1
+            state.visibleVideos.indexOfFirst { it.id == activeId }
+        }
+    }
+
+    val subtitleText by remember(filteredSubfolders.size, state.visibleVideos.size, state.browsedVideos.size, hasSearchQuery) {
+        derivedStateOf {
+            buildString(32) {
+                if (filteredSubfolders.isNotEmpty()) {
+                    append(filteredSubfolders.size).append(" subpastas · ")
+                }
+                append(state.visibleVideos.size)
+                if (hasSearchQuery && state.visibleVideos.size != state.browsedVideos.size) {
+                    append('/').append(state.browsedVideos.size)
+                }
+                append(" vídeos")
+            }
+        }
+    }
+
+    LaunchedEffect(activeVideoIndex, filteredSubfolders.size) {
         if (activeVideoIndex >= 0) {
-            listState.animateScrollToItem(activeVideoIndex + state.currentSubfolders.size)
+            listState.animateScrollToItem(activeVideoIndex + filteredSubfolders.size)
         }
     }
 
@@ -1454,10 +1630,11 @@ fun SplitScreenFileList(
             placeholder = { Text("Pesquisar vídeo (ex: gode, forro)...") },
             leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = palette.accent) },
             trailingIcon = {
-                if (state.searchQuery.isNotEmpty()) {
+                if (hasSearchQuery) {
+                    val onClearSearch = remember(onSearchChange) { { onSearchChange("") } }
                     Surface(
-                        onClick = { onSearchChange("") },
-                        shape = RoundedCornerShape(10.dp),
+                        onClick = onClearSearch,
+                        shape = ThumbShape10,
                         color = palette.accentSoft,
                         border = BorderStroke(1.dp, palette.accent),
                         modifier = Modifier.padding(end = 6.dp)
@@ -1486,52 +1663,21 @@ fun SplitScreenFileList(
 
         Spacer(Modifier.height(10.dp))
 
+        val activeVideoId = state.currentVideo?.id
+        val showFolderOrigin = state.isAllFoldersMode
+
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
             // Cards grandes de Subpastas acima da lista de vídeos
-            if (!state.isAllFoldersMode && state.currentSubfolders.isNotEmpty()) {
+            if (showSubfoldersSection) {
                 items(
-                    items = state.currentSubfolders,
+                    items = filteredSubfolders,
                     key = { "sub_\${it.id}" },
                     contentType = { "subfolder" }
                 ) { sub ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFF111827))
-                            .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(14.dp))
-                            .clickable { onOpenSubfolder(sub) }
-                            .padding(horizontal = 14.dp, vertical = 14.dp)
-                    ) {
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(palette.accentSoft)
-                        ) {
-                            Icon(Icons.Rounded.Folder, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = sub.name,
-                                color = Color.White,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = if (sub.videoCount > 0) "\${sub.videoCount} vídeos · Toque para abrir" else "Pasta · Toque para abrir",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 13.sp
-                            )
-                        }
-                        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
-                    }
+                    SubfolderListRow(
+                        sub = sub,
+                        onOpenSubfolder = onOpenSubfolder
+                    )
                 }
             }
 
@@ -1540,57 +1686,16 @@ fun SplitScreenFileList(
                 key = { _, item -> item.id },
                 contentType = { _, _ -> "video" }
             ) { index, item ->
-                val isCurrent = item.id == state.currentVideo?.id
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(if (isCurrent) palette.accentSoft else Color.Transparent, RoundedCornerShape(14.dp))
-                        .clickable { onSelectVideo(item) }
-                        .padding(horizontal = 12.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        text = "%02d".format(index + 1),
-                        color = if (isCurrent) palette.accent else Color(0xFF64748B),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.width(30.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    VideoListThumbnail(
-                        item = item,
-                        isCurrent = isCurrent,
-                        isPlaying = state.isPlaying
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = item.name,
-                            color = if (isCurrent) Color.White else Color(0xFFE2E8F0),
-                            fontSize = 16.sp,
-                            fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (state.isAllFoldersMode && item.folderName.isNotEmpty()) {
-                            Text(
-                                text = item.folderName,
-                                color = palette.accent,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    IconButton(onClick = { onRequestDelete(item) }, modifier = Modifier.size(52.dp)) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            contentDescription = "Excluir \${item.name}",
-                            tint = Color(0xFF94A3B8)
-                        )
-                    }
-                }
-                HorizontalDivider(color = Color(0x14FFFFFF))
+                val isCurrent = item.id == activeVideoId
+                VideoListRow(
+                    index = index,
+                    item = item,
+                    isCurrent = isCurrent,
+                    isPlayingCurrent = isCurrent && state.isPlaying,
+                    showFolderOrigin = showFolderOrigin,
+                    onSelectVideo = onSelectVideo,
+                    onRequestDelete = onRequestDelete
+                )
             }
         }
     }
@@ -1642,6 +1747,121 @@ fun SplitScreenFileList(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun SubfolderListRow(
+    sub: FolderEntry,
+    onOpenSubfolder: (FolderEntry) -> Unit
+) {
+    val palette = LocalAutoCinePalette.current
+    val onClick = remember(sub.id, onOpenSubfolder) { { onOpenSubfolder(sub) } }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clip(RowShape14)
+            .background(SubfolderCardBg)
+            .border(1.dp, SubtleBorderColor, RowShape14)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(IconBoxShape12)
+                .background(palette.accentSoft)
+        ) {
+            Icon(Icons.Rounded.Folder, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = sub.name,
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = if (sub.videoCount > 0) "\${sub.videoCount} vídeos · Toque para abrir" else "Pasta · Toque para abrir",
+                color = Color(0xFF94A3B8),
+                fontSize = 13.sp
+            )
+        }
+        Icon(Icons.Rounded.ChevronRight, contentDescription = null, tint = palette.accent, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+private fun VideoListRow(
+    index: Int,
+    item: VideoFileItem,
+    isCurrent: Boolean,
+    isPlayingCurrent: Boolean,
+    showFolderOrigin: Boolean,
+    onSelectVideo: (VideoFileItem) -> Unit,
+    onRequestDelete: (VideoFileItem) -> Unit
+) {
+    val palette = LocalAutoCinePalette.current
+    val onRowClick = remember(item.id, onSelectVideo) { { onSelectVideo(item) } }
+    val onDeleteClick = remember(item.id, onRequestDelete) { { onRequestDelete(item) } }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(if (isCurrent) palette.accentSoft else Color.Transparent, RowShape14)
+                .clickable(onClick = onRowClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            Text(
+                text = formatTwoDigits(index + 1),
+                color = if (isCurrent) palette.accent else Color(0xFF64748B),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.width(30.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            VideoListThumbnail(
+                item = item,
+                isCurrent = isCurrent,
+                isPlaying = isPlayingCurrent
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = item.name,
+                    color = if (isCurrent) Color.White else Color(0xFFE2E8F0),
+                    fontSize = 16.sp,
+                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (showFolderOrigin && item.folderName.isNotEmpty()) {
+                    Text(
+                        text = item.folderName,
+                        color = palette.accent,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            IconButton(onClick = onDeleteClick, modifier = Modifier.size(52.dp)) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = "Excluir \${item.name}",
+                    tint = Color(0xFF94A3B8)
+                )
+            }
+        }
+        HorizontalDivider(color = DividerColor)
     }
 }
 
@@ -1886,6 +2106,7 @@ private fun SettingsDialog(
     )
 }
 
+@Immutable
 private data class FolderOriginGroup(
     val label: String,
     val folders: List<FolderEntry>
@@ -1946,6 +2167,46 @@ private fun AllFoldersFilterDialog(
         }
     }
 
+    val allFolderIds = remember(folders) { folders.map { it.id }.toSet() }
+    val hasExpandedNodes by remember {
+        derivedStateOf { expandedGroups.isNotEmpty() || expandedFolderIds.isNotEmpty() }
+    }
+
+    val groupMetadata = remember(groups) {
+        groups.associate { group ->
+            group.label to (
+                group.folders.map { it.id }.toSet() to
+                    group.folders.sumOf { it.videoCount.coerceAtLeast(0) }
+                )
+        }
+    }
+
+    val visibleFoldersByGroup by remember(groups, childrenInfoByGroup) {
+        derivedStateOf {
+            groups.associate { group ->
+                val isGroupExpanded = group.label in expandedGroups
+                if (!isGroupExpanded) {
+                    group.label to emptyList()
+                } else {
+                    val parentIdMap = childrenInfoByGroup[group.label]?.second.orEmpty()
+                    val visible = group.folders.filter { entry ->
+                        var parentId = parentIdMap[entry.id]
+                        var ancestorsExpanded = true
+                        while (parentId != null) {
+                            if (parentId !in expandedFolderIds) {
+                                ancestorsExpanded = false
+                                break
+                            }
+                            parentId = parentIdMap[parentId]
+                        }
+                        ancestorsExpanded
+                    }
+                    group.label to visible
+                }
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = Color(0xFF0E1420),
@@ -1963,13 +2224,13 @@ private fun AllFoldersFilterDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    TextButton(onClick = { draftSelected = folders.map { it.id }.toSet() }) {
+                    TextButton(onClick = { draftSelected = allFolderIds }) {
                         Text("Marcar todas", color = palette.accent)
                     }
                     TextButton(onClick = { draftSelected = emptySet() }) {
                         Text("Limpar", color = Color(0xFF94A3B8))
                     }
-                    if (expandedGroups.isNotEmpty() || expandedFolderIds.isNotEmpty()) {
+                    if (hasExpandedNodes) {
                         TextButton(
                             onClick = {
                                 expandedGroups = emptySet()
@@ -1984,25 +2245,24 @@ private fun AllFoldersFilterDialog(
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
                     groups.forEach { group ->
                         val isGroupExpanded = group.label in expandedGroups
-                        val groupIds = group.folders.map { it.id }.toSet()
+                        val (groupIds, totalVideosInGroup) = groupMetadata[group.label] ?: (emptySet<String>() to 0)
                         val selectedCount = group.folders.count { it.id in draftSelected }
                         val allInGroupSelected = groupIds.isNotEmpty() && selectedCount == groupIds.size
-                        val totalVideosInGroup = group.folders.sumOf { it.videoCount.coerceAtLeast(0) }
                         val groupIcon = when (group.label) {
                             "Pen Drive" -> Icons.Rounded.Usb
                             "Cartão SD" -> Icons.Rounded.SdCard
                             else -> Icons.Rounded.Storage
                         }
 
-                        item(key = "group_\${group.label}") {
+                        item(key = "group_\${group.label}", contentType = "group_header") {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(vertical = 4.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(IconBoxShape12)
                                     .background(Color(0xFF151E2E))
-                                    .border(1.dp, Color(0x1FFFFFFF), RoundedCornerShape(12.dp))
+                                    .border(1.dp, SubtleBorderColor, IconBoxShape12)
                                     .clickable {
                                         expandedGroups = if (isGroupExpanded) {
                                             expandedGroups - group.label
@@ -2059,23 +2319,14 @@ private fun AllFoldersFilterDialog(
                         }
 
                         if (isGroupExpanded) {
-                            val (hasChildrenSet, parentIdMap) = childrenInfoByGroup[group.label]
-                                ?: (emptySet<String>() to emptyMap<String, String>())
+                            val hasChildrenSet = childrenInfoByGroup[group.label]?.first.orEmpty()
+                            val visibleInGroup = visibleFoldersByGroup[group.label].orEmpty()
 
-                            val visibleInGroup = group.folders.filter { entry ->
-                                var parentId = parentIdMap[entry.id]
-                                var ancestorsExpanded = true
-                                while (parentId != null) {
-                                    if (parentId !in expandedFolderIds) {
-                                        ancestorsExpanded = false
-                                        break
-                                    }
-                                    parentId = parentIdMap[parentId]
-                                }
-                                ancestorsExpanded
-                            }
-
-                            items(visibleInGroup, key = { "folder_\${group.label}_\${it.id}" }) { folder ->
+                            items(
+                                items = visibleInGroup,
+                                key = { "folder_\${group.label}_\${it.id}" },
+                                contentType = { "folder_item" }
+                            ) { folder ->
                                 val checked = folder.id in draftSelected
                                 val hasSubfolders = folder.id in hasChildrenSet
                                 val isFolderExpanded = folder.id in expandedFolderIds
@@ -2162,8 +2413,7 @@ private fun AllFoldersFilterDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val allIds = folders.map { it.id }.toSet()
-                    val normalized = if (draftSelected == allIds) null else draftSelected
+                    val normalized = if (draftSelected == allFolderIds) null else draftSelected
                     onApply(normalized)
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -2291,17 +2541,11 @@ private fun SplitScreenContent(
     onEnterPip: () -> Unit,
     onPickFolderForSlot: (StorageSlot) -> Unit
 ) {
-    // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)
-    val browserStateFlow = remember {
-        viewModel.uiState
-            .map { state ->
-                state.copy(positionMs = 0L, durationMs = 0L)
-            }
-            .distinctUntilChanged()
+    // PlayerUiState já é isolado de positionMs/durationMs: zero recomposições por tick de tempo
+    val state by viewModel.uiState.collectAsState()
+    val onSelectSlot = remember(viewModel, onPickFolderForSlot) {
+        { slot: StorageSlot -> viewModel.selectStorageSlot(slot, onPickFolderForSlot) }
     }
-    val state by browserStateFlow.collectAsState(
-        initial = viewModel.uiState.value.copy(positionMs = 0L, durationMs = 0L)
-    )
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Esquerda: Mini-Player com VlcVideoSurface nativo + Controles + Armazenamento
@@ -2320,9 +2564,7 @@ private fun SplitScreenContent(
             onPrev = viewModel::playPrevious,
             onNext = viewModel::playNext,
             onEnterPip = onEnterPip,
-            onSelectStorageSlot = { slot ->
-                viewModel.selectStorageSlot(slot, onPickFolderForSlot)
-            },
+            onSelectStorageSlot = onSelectSlot,
             onOpenAllFilter = viewModel::openAllFoldersFilter,
             modifier = Modifier
                 .weight(0.40f)
@@ -2371,7 +2613,11 @@ private fun FullscreenContent(
     onAdjustVolume: (Float) -> Float,
     onGetVolume: () -> Float
 ) {
+    // PlayerUiState não muda a cada segundo: apenas FullScreenProgressBar observa playbackProgress
     val state by viewModel.uiState.collectAsState()
+    val getPositionMs = remember(viewModel) { { viewModel.playbackProgress.value.positionMs } }
+    val getDurationMs = remember(viewModel) { { viewModel.playbackProgress.value.durationMs } }
+    val onOpenSplitList = remember(viewModel) { { viewModel.setSplitScreen(true) } }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)
@@ -2382,8 +2628,8 @@ private fun FullscreenContent(
 
         if (!isInPipMode) {
             GestureOverlay(
-                positionMs = state.positionMs,
-                durationMs = state.durationMs,
+                getPositionMs = getPositionMs,
+                getDurationMs = getDurationMs,
                 onTapToggleControls = onToggleControls,
                 onSeekCommit = viewModel::seekTo,
                 onGetBrightness = onGetBrightness,
@@ -2395,13 +2641,14 @@ private fun FullscreenContent(
             FullScreenControls(
                 visible = controlsVisible,
                 state = state,
+                progressFlow = viewModel.playbackProgress,
                 onTogglePlayPause = viewModel::togglePlayPause,
                 onPrev = viewModel::playPrevious,
                 onNext = viewModel::playNext,
                 onSeek = viewModel::seekTo,
                 onCycleMode = viewModel::cyclePlaybackMode,
                 onCycleAspect = viewModel::cycleAspectRatio,
-                onOpenSplitList = { viewModel.setSplitScreen(true) },
+                onOpenSplitList = onOpenSplitList,
                 onEnterPip = onEnterPip
             )
         }
@@ -2453,7 +2700,7 @@ private fun VlcVideoSurface(
     path: 'app/src/main/java/com/autocine/player/MainActivity.kt',
     category: 'ui',
     language: 'kotlin',
-    summary: 'Activity paisagem com modo imersivo, PiP, volume híbrido (libVLC + STREAM_MUSIC sem travamento) e BootReceiver',
+    summary: 'Activity paisagem com cold start assíncrono, PiP, volume híbrido, onTrimMemory e BootReceiver',
     content: `package com.autocine.player
 
 import android.Manifest
@@ -2484,6 +2731,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -2493,18 +2741,21 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.documentfile.provider.DocumentFile
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.receiver.BootReceiver
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.PlayerScreen
+import com.autocine.player.ui.clearVideoThumbnailCache
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.AutoCineTheme
 import com.autocine.player.ui.theme.UiScaleLevel
+import com.autocine.player.ui.trimVideoThumbnailCache
 import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -2523,6 +2774,12 @@ class MainActivity : ComponentActivity() {
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
     private var lastAppliedSystemVolStep: Int = -1
+    private val audioManager: AudioManager? by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+    private val maxMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
+        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -2562,14 +2819,8 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
-            val fallbackName = when (pendingPickerSlot) {
-                StorageSlot.USB -> "Pen Drive"
-                StorageSlot.SD_CARD -> "Cartão SD"
-                StorageSlot.INTERNAL -> "Memória Interna"
-                StorageSlot.ALL -> "Pasta"
-            }
-            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: fallbackName
-            viewModel.onFolderSelected(uri.toString(), name, pendingPickerSlot)
+            // Resolve o nome de exibição em Dispatchers.IO dentro do ViewModel (zero IPC na Main Thread)
+            viewModel.onFolderSelected(uri.toString(), "", pendingPickerSlot)
         }
     }
 
@@ -2582,7 +2833,6 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         enableImmersiveFullscreen()
-        requestModernPermissions()
 
         VideoPlaybackService.start(this)
         bindService(
@@ -2609,8 +2859,24 @@ class MainActivity : ComponentActivity() {
             )
             val (colorTheme, uiScaleLevel, startOnBoot) = appearance
 
-            // Sincroniza o estado do BootReceiver no PackageManager sempre que a opção mudar
-            syncBootReceiverComponent(startOnBoot)
+            // Sincroniza o estado do BootReceiver fora da Main Thread e apenas quando o valor muda
+            LaunchedEffect(startOnBoot) {
+                withContext(Dispatchers.IO) {
+                    syncBootReceiverComponent(startOnBoot)
+                }
+            }
+
+            val onEnterPipCb = remember { { enterPipNow() } }
+            val onPickFolderCb = remember {
+                { slot: StorageSlot ->
+                    pendingPickerSlot = slot
+                    openFolderLauncher.launch(null)
+                }
+            }
+            val onAdjustBrightnessCb = remember { { fraction: Float -> setWindowBrightness(fraction) } }
+            val onGetBrightnessCb = remember { { getWindowBrightness() } }
+            val onAdjustVolumeCb = remember { { fraction: Float -> setMediaVolume(fraction) } }
+            val onGetVolumeCb = remember { { getMediaVolume() } }
 
             AutoCineTheme(
                 colorTheme = colorTheme,
@@ -2619,17 +2885,19 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = viewModel,
                     engine = activeEngine,
-                    onEnterPip = { enterPipNow() },
-                    onPickFolderForSlot = { slot ->
-                        pendingPickerSlot = slot
-                        openFolderLauncher.launch(null)
-                    },
-                    onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
-                    onGetBrightness = { getWindowBrightness() },
-                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
-                    onGetVolume = { getMediaVolume() }
+                    onEnterPip = onEnterPipCb,
+                    onPickFolderForSlot = onPickFolderCb,
+                    onAdjustBrightness = onAdjustBrightnessCb,
+                    onGetBrightness = onGetBrightnessCb,
+                    onAdjustVolume = onAdjustVolumeCb,
+                    onGetVolume = onGetVolumeCb
                 )
             }
+        }
+
+        // Adia checagem de permissões para depois do primeiro frame (cold start mais rápido)
+        window.decorView.post {
+            requestModernPermissions()
         }
     }
 
@@ -2797,14 +3065,12 @@ class MainActivity : ComponentActivity() {
         val clamped = fraction.coerceIn(0f, 1f)
         viewModel.syncVolumeFraction(clamped)
 
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            ?: return clamped
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val target = (clamped * maxVol).roundToInt().coerceIn(0, maxVol)
+        val am = audioManager ?: return clamped
+        val target = (clamped * maxMusicVolume).roundToInt().coerceIn(0, maxMusicVolume)
         if (target != lastAppliedSystemVolStep) {
             lastAppliedSystemVolStep = target
             runCatching {
-                audioManager.setStreamVolume(
+                am.setStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     target,
                     0
@@ -2817,6 +3083,25 @@ class MainActivity : ComponentActivity() {
     private fun getMediaVolume(): Float {
         lastAppliedSystemVolStep = -1
         return viewModel.getVolumeFraction()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        when (level) {
+            TRIM_MEMORY_RUNNING_LOW,
+            TRIM_MEMORY_RUNNING_CRITICAL,
+            TRIM_MEMORY_MODERATE,
+            TRIM_MEMORY_COMPLETE -> clearVideoThumbnailCache()
+            TRIM_MEMORY_UI_HIDDEN,
+            TRIM_MEMORY_BACKGROUND,
+            TRIM_MEMORY_RUNNING_MODERATE -> trimVideoThumbnailCache()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onLowMemory() {
+        super.onLowMemory()
+        clearVideoThumbnailCache()
     }
 
     private fun syncBootReceiverComponent(enabled: Boolean) {
@@ -2838,18 +3123,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestModernPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
+        val required = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
-            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            required.add(Manifest.permission.READ_MEDIA_VIDEO)
+            required.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            required.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                required.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
-        if (permissionsToRequest.isNotEmpty()) {
-            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {

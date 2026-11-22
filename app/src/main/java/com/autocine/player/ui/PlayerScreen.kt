@@ -101,17 +101,11 @@ private fun SplitScreenContent(
     onEnterPip: () -> Unit,
     onPickFolderForSlot: (StorageSlot) -> Unit
 ) {
-    // Coleta apenas campos relevantes ao Split-Screen (ignorando positionMs/durationMs)
-    val browserStateFlow = remember {
-        viewModel.uiState
-            .map { state ->
-                state.copy(positionMs = 0L, durationMs = 0L)
-            }
-            .distinctUntilChanged()
+    // PlayerUiState já é isolado de positionMs/durationMs: zero recomposições por tick de tempo
+    val state by viewModel.uiState.collectAsState()
+    val onSelectSlot = remember(viewModel, onPickFolderForSlot) {
+        { slot: StorageSlot -> viewModel.selectStorageSlot(slot, onPickFolderForSlot) }
     }
-    val state by browserStateFlow.collectAsState(
-        initial = viewModel.uiState.value.copy(positionMs = 0L, durationMs = 0L)
-    )
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Esquerda: Mini-Player com VlcVideoSurface nativo + Controles + Armazenamento
@@ -130,9 +124,7 @@ private fun SplitScreenContent(
             onPrev = viewModel::playPrevious,
             onNext = viewModel::playNext,
             onEnterPip = onEnterPip,
-            onSelectStorageSlot = { slot ->
-                viewModel.selectStorageSlot(slot, onPickFolderForSlot)
-            },
+            onSelectStorageSlot = onSelectSlot,
             onOpenAllFilter = viewModel::openAllFoldersFilter,
             modifier = Modifier
                 .weight(0.40f)
@@ -181,7 +173,11 @@ private fun FullscreenContent(
     onAdjustVolume: (Float) -> Float,
     onGetVolume: () -> Float
 ) {
+    // PlayerUiState não muda a cada segundo: apenas FullScreenProgressBar observa playbackProgress
     val state by viewModel.uiState.collectAsState()
+    val getPositionMs = remember(viewModel) { { viewModel.playbackProgress.value.positionMs } }
+    val getDurationMs = remember(viewModel) { { viewModel.playbackProgress.value.durationMs } }
+    val onOpenSplitList = remember(viewModel) { { viewModel.setSplitScreen(true) } }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Superfície de vídeo nativa da libVLC diretamente na raiz (nenhuma camada opaca sobre o vídeo)
@@ -192,8 +188,8 @@ private fun FullscreenContent(
 
         if (!isInPipMode) {
             GestureOverlay(
-                positionMs = state.positionMs,
-                durationMs = state.durationMs,
+                getPositionMs = getPositionMs,
+                getDurationMs = getDurationMs,
                 onTapToggleControls = onToggleControls,
                 onSeekCommit = viewModel::seekTo,
                 onGetBrightness = onGetBrightness,
@@ -205,13 +201,14 @@ private fun FullscreenContent(
             FullScreenControls(
                 visible = controlsVisible,
                 state = state,
+                progressFlow = viewModel.playbackProgress,
                 onTogglePlayPause = viewModel::togglePlayPause,
                 onPrev = viewModel::playPrevious,
                 onNext = viewModel::playNext,
                 onSeek = viewModel::seekTo,
                 onCycleMode = viewModel::cyclePlaybackMode,
                 onCycleAspect = viewModel::cycleAspectRatio,
-                onOpenSplitList = { viewModel.setSplitScreen(true) },
+                onOpenSplitList = onOpenSplitList,
                 onEnterPip = onEnterPip
             )
         }

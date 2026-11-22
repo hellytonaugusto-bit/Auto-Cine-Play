@@ -5,11 +5,13 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 
+@Immutable
 enum class UiScaleLevel(val label: String, val factor: Float) {
     SMALL("Pequeno", 0.85f),
     DEFAULT("Padrão", 1.0f),
@@ -17,6 +19,7 @@ enum class UiScaleLevel(val label: String, val factor: Float) {
     EXTRA_LARGE("Extra Grande", 1.30f)
 }
 
+@Immutable
 enum class AppColorTheme(
     val label: String,
     val accent: Color,
@@ -100,31 +103,37 @@ fun AutoCineTheme(
     uiScaleLevel: UiScaleLevel = UiScaleLevel.DEFAULT,
     content: @Composable () -> Unit
 ) {
-    val palette = AutoCinePalette(
-        accent = colorTheme.accent,
-        accentDark = colorTheme.accentDark,
-        accentContainer = colorTheme.accentContainer,
-        accentSoft = colorTheme.accentSoft,
-        onAccent = colorTheme.onAccent
-    )
+    val palette = remember(colorTheme) {
+        AutoCinePalette(
+            accent = colorTheme.accent,
+            accentDark = colorTheme.accentDark,
+            accentContainer = colorTheme.accentContainer,
+            accentSoft = colorTheme.accentSoft,
+            onAccent = colorTheme.onAccent
+        )
+    }
 
-    val colorScheme = darkColorScheme(
-        primary = colorTheme.accent,
-        onPrimary = colorTheme.onAccent,
-        primaryContainer = colorTheme.accentContainer,
-        onPrimaryContainer = Color.White,
-        background = Color(0xFF07090D),
-        surface = Color(0xFF0C1018),
-        onBackground = Color(0xFFF1F5F9),
-        onSurface = Color(0xFFF1F5F9),
-        error = Color(0xFFEF4444)
-    )
+    val colorScheme = remember(colorTheme) {
+        darkColorScheme(
+            primary = colorTheme.accent,
+            onPrimary = colorTheme.onAccent,
+            primaryContainer = colorTheme.accentContainer,
+            onPrimaryContainer = Color.White,
+            background = Color(0xFF07090D),
+            surface = Color(0xFF0C1018),
+            onBackground = Color(0xFFF1F5F9),
+            onSurface = Color(0xFFF1F5F9),
+            error = Color(0xFFEF4444)
+        )
+    }
 
     val baseDensity = LocalDensity.current
-    val scaledDensity = Density(
-        density = baseDensity.density * uiScaleLevel.factor,
-        fontScale = baseDensity.fontScale * uiScaleLevel.factor
-    )
+    val scaledDensity = remember(baseDensity, uiScaleLevel) {
+        Density(
+            density = baseDensity.density * uiScaleLevel.factor,
+            fontScale = baseDensity.fontScale * uiScaleLevel.factor
+        )
+    }
 
     CompositionLocalProvider(
         LocalAutoCinePalette provides palette,

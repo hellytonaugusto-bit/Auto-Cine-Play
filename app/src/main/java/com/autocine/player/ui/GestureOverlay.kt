@@ -54,8 +54,8 @@ private enum class GestureAxis { NONE, SEEK, BRIGHTNESS, VOLUME }
 
 @Composable
 fun GestureOverlay(
-    positionMs: Long,
-    durationMs: Long,
+    getPositionMs: () -> Long,
+    getDurationMs: () -> Long,
     onTapToggleControls: () -> Unit,
     onSeekCommit: (Long) -> Unit,
     onGetBrightness: () -> Float,
@@ -67,9 +67,9 @@ fun GestureOverlay(
     val palette = LocalAutoCinePalette.current
     val scope = rememberCoroutineScope()
 
-    // Mantém referências sempre atualizadas sem reiniciar o pointerInput quando o vídeo avança (evita congelamento do HUD)
-    val latestPositionMs by rememberUpdatedState(positionMs)
-    val latestDurationMs by rememberUpdatedState(durationMs)
+    // Referências estáveis sem reiniciar pointerInput nem recompor o GestureOverlay a cada segundo do vídeo
+    val latestGetPositionMs by rememberUpdatedState(getPositionMs)
+    val latestGetDurationMs by rememberUpdatedState(getDurationMs)
     val latestOnTap by rememberUpdatedState(onTapToggleControls)
     val latestOnSeekCommit by rememberUpdatedState(onSeekCommit)
     val latestOnGetBrightness by rememberUpdatedState(onGetBrightness)
@@ -81,6 +81,7 @@ fun GestureOverlay(
     var displayAxis by remember { mutableStateOf(GestureAxis.BRIGHTNESS) }
     var hudValue by remember { mutableFloatStateOf(0f) }
     var hudSeekTargetMs by remember { mutableLongStateOf(0L) }
+    var hudSeekDurationMs by remember { mutableLongStateOf(0L) }
     var hudSeekDeltaSec by remember { mutableLongStateOf(0L) }
     var hideHudJob by remember { mutableStateOf<Job?>(null) }
 
@@ -107,7 +108,7 @@ fun GestureOverlay(
                 // - Toque simples alterna controles
                 // - Arrasto horizontal (qualquer região): avanço/retrocesso (seek)
                 // - Arrasto vertical na metade ESQUERDA: brilho suave (0.05f..1.0f)
-                // - Arrasto vertical na metade DIREITA: volume de mídia Android (STREAM_MUSIC)
+                // - Arrasto vertical na metade DIREITA: volume híbrido (libVLC + STREAM_MUSIC)
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = true)
                     val downPos = down.position
@@ -116,7 +117,8 @@ fun GestureOverlay(
 
                     var activeAxis = GestureAxis.NONE
                     var startValue = 0f
-                    val startPosMs = latestPositionMs
+                    val startPosMs = latestGetPositionMs()
+                    val startDurMs = latestGetDurationMs().coerceAtLeast(0L)
                     var dragTargetMs = startPosMs
                     var pointerMovedBeyondSlop = false
 
@@ -149,7 +151,10 @@ fun GestureOverlay(
                                 hideHudJob?.cancel()
 
                                 activeAxis = when {
-                                    abs(totalDx) > abs(totalDy) * 1.25f -> GestureAxis.SEEK
+                                    abs(totalDx) > abs(totalDy) * 1.25f -> {
+                                        hudSeekDurationMs = startDurMs
+                                        GestureAxis.SEEK
+                                    }
                                     startX < size.width / 2f -> {
                                         startValue = latestOnGetBrightness().coerceIn(0.05f, 1f)
                                         hudValue = startValue
@@ -169,13 +174,14 @@ fun GestureOverlay(
 
                             when (activeAxis) {
                                 GestureAxis.SEEK -> {
-                                    val dur = latestDurationMs.coerceAtLeast(0L)
+                                    val dur = latestGetDurationMs().coerceAtLeast(startDurMs)
                                     val spanMs = minOf(dur.coerceAtLeast(30_000L), 90_000L)
                                     val widthPx = size.width.coerceAtLeast(1).toFloat()
                                     val deltaMs = ((totalDx / widthPx) * spanMs).toLong()
                                     val target = (startPosMs + deltaMs).coerceIn(0L, dur)
                                     dragTargetMs = target
                                     hudSeekTargetMs = target
+                                    hudSeekDurationMs = dur
                                     hudSeekDeltaSec = (target - startPosMs) / 1000L
                                 }
                                 GestureAxis.BRIGHTNESS -> {
@@ -235,7 +241,7 @@ fun GestureOverlay(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "${formatMs(hudSeekTargetMs)} / ${formatMs(latestDurationMs)}",
+                            text = "${formatMs(hudSeekTargetMs)} / ${formatMs(hudSeekDurationMs)}",
                             color = Color(0xFFCBD5E1),
                             fontSize = 14.sp
                         )
@@ -299,9 +305,17 @@ fun GestureOverlay(
 
 fun formatMs(ms: Long): String {
     val totalSec = (ms / 1000L).coerceAtLeast(0L)
-    val hrs = totalSec / 3600
-    val mins = (totalSec % 3600) / 60
-    val secs = totalSec % 60
-    return if (hrs > 0) "%02d:%02d:%02d".format(hrs, mins, secs)
-    else "%02d:%02d".format(mins, secs)
+    val hrs = (totalSec / 3600L).toInt()
+    val mins = ((totalSec % 3600L) / 60L).toInt()
+    val secs = (totalSec % 60L).toInt()
+    val sb = StringBuilder(8)
+    if (hrs > 0) {
+        if (hrs < 10) sb.append('0')
+        sb.append(hrs).append(':')
+    }
+    if (mins < 10) sb.append('0')
+    sb.append(mins).append(':')
+    if (secs < 10) sb.append('0')
+    sb.append(secs)
+    return sb.toString()
 }

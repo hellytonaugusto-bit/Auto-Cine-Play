@@ -28,6 +28,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,18 +38,21 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.documentfile.provider.DocumentFile
 import com.autocine.player.data.StorageSlot
 import com.autocine.player.receiver.BootReceiver
 import com.autocine.player.service.VideoPlaybackService
 import com.autocine.player.ui.PlayerScreen
+import com.autocine.player.ui.clearVideoThumbnailCache
 import com.autocine.player.ui.theme.AppColorTheme
 import com.autocine.player.ui.theme.AutoCineTheme
 import com.autocine.player.ui.theme.UiScaleLevel
+import com.autocine.player.ui.trimVideoThumbnailCache
 import com.autocine.player.viewmodel.PlayerViewModel
 import com.autocine.player.vlc.VlcPlayerEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +71,12 @@ class MainActivity : ComponentActivity() {
     private var isBound = false
     private var pendingPickerSlot: StorageSlot = StorageSlot.USB
     private var lastAppliedSystemVolStep: Int = -1
+    private val audioManager: AudioManager? by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+    private val maxMusicVolume: Int by lazy(LazyThreadSafetyMode.NONE) {
+        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -106,14 +116,8 @@ class MainActivity : ComponentActivity() {
         if (uri != null) {
             val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             runCatching { contentResolver.takePersistableUriPermission(uri, flags) }
-            val fallbackName = when (pendingPickerSlot) {
-                StorageSlot.USB -> "Pen Drive"
-                StorageSlot.SD_CARD -> "Cartão SD"
-                StorageSlot.INTERNAL -> "Memória Interna"
-                StorageSlot.ALL -> "Pasta"
-            }
-            val name = DocumentFile.fromTreeUri(this, uri)?.name ?: uri.lastPathSegment ?: fallbackName
-            viewModel.onFolderSelected(uri.toString(), name, pendingPickerSlot)
+            // Resolve o nome de exibição em Dispatchers.IO dentro do ViewModel (zero IPC na Main Thread)
+            viewModel.onFolderSelected(uri.toString(), "", pendingPickerSlot)
         }
     }
 
@@ -126,7 +130,6 @@ class MainActivity : ComponentActivity() {
         volumeControlStream = AudioManager.STREAM_MUSIC
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         enableImmersiveFullscreen()
-        requestModernPermissions()
 
         VideoPlaybackService.start(this)
         bindService(
@@ -153,8 +156,24 @@ class MainActivity : ComponentActivity() {
             )
             val (colorTheme, uiScaleLevel, startOnBoot) = appearance
 
-            // Sincroniza o estado do BootReceiver no PackageManager sempre que a opção mudar
-            syncBootReceiverComponent(startOnBoot)
+            // Sincroniza o estado do BootReceiver fora da Main Thread e apenas quando o valor muda
+            LaunchedEffect(startOnBoot) {
+                withContext(Dispatchers.IO) {
+                    syncBootReceiverComponent(startOnBoot)
+                }
+            }
+
+            val onEnterPipCb = remember { { enterPipNow() } }
+            val onPickFolderCb = remember {
+                { slot: StorageSlot ->
+                    pendingPickerSlot = slot
+                    openFolderLauncher.launch(null)
+                }
+            }
+            val onAdjustBrightnessCb = remember { { fraction: Float -> setWindowBrightness(fraction) } }
+            val onGetBrightnessCb = remember { { getWindowBrightness() } }
+            val onAdjustVolumeCb = remember { { fraction: Float -> setMediaVolume(fraction) } }
+            val onGetVolumeCb = remember { { getMediaVolume() } }
 
             AutoCineTheme(
                 colorTheme = colorTheme,
@@ -163,17 +182,19 @@ class MainActivity : ComponentActivity() {
                 PlayerScreen(
                     viewModel = viewModel,
                     engine = activeEngine,
-                    onEnterPip = { enterPipNow() },
-                    onPickFolderForSlot = { slot ->
-                        pendingPickerSlot = slot
-                        openFolderLauncher.launch(null)
-                    },
-                    onAdjustBrightness = { fraction -> setWindowBrightness(fraction) },
-                    onGetBrightness = { getWindowBrightness() },
-                    onAdjustVolume = { fraction -> setMediaVolume(fraction) },
-                    onGetVolume = { getMediaVolume() }
+                    onEnterPip = onEnterPipCb,
+                    onPickFolderForSlot = onPickFolderCb,
+                    onAdjustBrightness = onAdjustBrightnessCb,
+                    onGetBrightness = onGetBrightnessCb,
+                    onAdjustVolume = onAdjustVolumeCb,
+                    onGetVolume = onGetVolumeCb
                 )
             }
+        }
+
+        // Adia checagem de permissões para depois do primeiro frame (cold start mais rápido)
+        window.decorView.post {
+            requestModernPermissions()
         }
     }
 
@@ -341,14 +362,12 @@ class MainActivity : ComponentActivity() {
         val clamped = fraction.coerceIn(0f, 1f)
         viewModel.syncVolumeFraction(clamped)
 
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-            ?: return clamped
-        val maxVol = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val target = (clamped * maxVol).roundToInt().coerceIn(0, maxVol)
+        val am = audioManager ?: return clamped
+        val target = (clamped * maxMusicVolume).roundToInt().coerceIn(0, maxMusicVolume)
         if (target != lastAppliedSystemVolStep) {
             lastAppliedSystemVolStep = target
             runCatching {
-                audioManager.setStreamVolume(
+                am.setStreamVolume(
                     AudioManager.STREAM_MUSIC,
                     target,
                     0
@@ -361,6 +380,25 @@ class MainActivity : ComponentActivity() {
     private fun getMediaVolume(): Float {
         lastAppliedSystemVolStep = -1
         return viewModel.getVolumeFraction()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        when (level) {
+            TRIM_MEMORY_RUNNING_LOW,
+            TRIM_MEMORY_RUNNING_CRITICAL,
+            TRIM_MEMORY_MODERATE,
+            TRIM_MEMORY_COMPLETE -> clearVideoThumbnailCache()
+            TRIM_MEMORY_UI_HIDDEN,
+            TRIM_MEMORY_BACKGROUND,
+            TRIM_MEMORY_RUNNING_MODERATE -> trimVideoThumbnailCache()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onLowMemory() {
+        super.onLowMemory()
+        clearVideoThumbnailCache()
     }
 
     private fun syncBootReceiverComponent(enabled: Boolean) {
@@ -382,18 +420,21 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun requestModernPermissions() {
-        val permissionsToRequest = mutableListOf<String>()
+        val required = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissionsToRequest.add(Manifest.permission.READ_MEDIA_VIDEO)
-            permissionsToRequest.add(Manifest.permission.POST_NOTIFICATIONS)
+            required.add(Manifest.permission.READ_MEDIA_VIDEO)
+            required.add(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            required.add(Manifest.permission.READ_EXTERNAL_STORAGE)
             if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.Q) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                required.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
         }
-        if (permissionsToRequest.isNotEmpty()) {
-            permissionLauncher.launch(permissionsToRequest.toTypedArray())
+        val missing = required.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isNotEmpty()) {
+            permissionLauncher.launch(missing.toTypedArray())
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
