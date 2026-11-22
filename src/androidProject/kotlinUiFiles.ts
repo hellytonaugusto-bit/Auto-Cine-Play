@@ -1430,10 +1430,10 @@ fun SplitScreenFileList(
         derivedStateOf { state.searchQuery.isNotEmpty() }
     }
 
-    val filteredSubfolders by remember(state.currentSubfolders, state.searchQuery, state.isAllFoldersMode) {
-        derivedStateOf {
+    val filteredSubfolders: List<FolderEntry> by remember(state.currentSubfolders, state.searchQuery, state.isAllFoldersMode) {
+        derivedStateOf<List<FolderEntry>> {
             if (state.isAllFoldersMode || state.currentSubfolders.isEmpty()) {
-                emptyList()
+                emptyList<FolderEntry>()
             } else {
                 val q = StorageRepository.normalizeForSearch(state.searchQuery)
                 if (q.isEmpty()) state.currentSubfolders
@@ -2181,15 +2181,15 @@ private fun AllFoldersFilterDialog(
         }
     }
 
-    val visibleFoldersByGroup by remember(groups, childrenInfoByGroup) {
-        derivedStateOf {
+    val visibleFoldersByGroup: Map<String, List<FolderEntry>> by remember(groups, childrenInfoByGroup) {
+        derivedStateOf<Map<String, List<FolderEntry>>> {
             groups.associate { group ->
                 val isGroupExpanded = group.label in expandedGroups
                 if (!isGroupExpanded) {
-                    group.label to emptyList()
+                    group.label to emptyList<FolderEntry>()
                 } else {
                     val parentIdMap = childrenInfoByGroup[group.label]?.second.orEmpty()
-                    val visible = group.folders.filter { entry ->
+                    val visible: List<FolderEntry> = group.folders.filter { entry ->
                         var parentId = parentIdMap[entry.id]
                         var ancestorsExpanded = true
                         while (parentId != null) {
@@ -2320,11 +2320,11 @@ private fun AllFoldersFilterDialog(
 
                         if (isGroupExpanded) {
                             val hasChildrenSet = childrenInfoByGroup[group.label]?.first.orEmpty()
-                            val visibleInGroup = visibleFoldersByGroup[group.label].orEmpty()
+                            val visibleInGroup: List<FolderEntry> = visibleFoldersByGroup[group.label].orEmpty()
 
                             items(
                                 items = visibleInGroup,
-                                key = { "folder_\${group.label}_\${it.id}" },
+                                key = { folder -> "folder_\${group.label}_\${folder.id}" },
                                 contentType = { "folder_item" }
                             ) { folder ->
                                 val checked = folder.id in draftSelected
